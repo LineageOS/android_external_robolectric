@@ -1,6 +1,5 @@
 package org.robolectric.shadows;
 
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static android.os.Build.VERSION_CODES.S;
 import static org.robolectric.util.ReflectionHelpers.createDeepProxy;
 import static org.robolectric.util.reflector.Reflector.reflector;
@@ -24,7 +23,7 @@ import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.ForType;
 
 /** Shadow for {@link MediaSessionManager}. */
-@Implements(value = MediaSessionManager.class, minSdk = LOLLIPOP)
+@Implements(value = MediaSessionManager.class)
 public class ShadowMediaSessionManager {
   private final List<MediaController> controllers = new CopyOnWriteArrayList<>();
   private final Set<OnActiveSessionsChangedListener> listeners = new CopyOnWriteArraySet<>();
@@ -78,10 +77,14 @@ public class ShadowMediaSessionManager {
 
   /**
    * Clears all controllers such that {@link #getActiveSessions(ComponentName)} will return the
-   * empty list.
+   * empty list. This will trigger a callback on each {@link OnActiveSessionsChangedListener}
+   * callback registered with this class.
    */
   public void clearControllers() {
     controllers.clear();
+    for (OnActiveSessionsChangedListener listener : listeners) {
+      listener.onActiveSessionsChanged(controllers);
+    }
   }
 
   @ForType(MediaSessionManager.class)

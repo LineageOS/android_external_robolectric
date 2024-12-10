@@ -38,7 +38,6 @@ import org.junit.runner.RunWith;
 import org.robolectric.annotation.Config;
 
 /** Tests for {@link ShadowCameraDeviceImpl}. */
-@Config(minSdk = VERSION_CODES.LOLLIPOP)
 @RunWith(AndroidJUnit4.class)
 public final class ShadowCameraDeviceImplTest {
   private static final String CAMERA_ID_0 = "cameraId0";
@@ -70,7 +69,7 @@ public final class ShadowCameraDeviceImplTest {
   }
 
   @Test
-  @Config(minSdk = VERSION_CODES.LOLLIPOP, maxSdk = VERSION_CODES.Q)
+  @Config(maxSdk = VERSION_CODES.Q)
   public void createCaptureRequest() throws CameraAccessException {
     builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
     CaptureRequest request = builder.build();
@@ -95,7 +94,7 @@ public final class ShadowCameraDeviceImplTest {
   public void createCaptureSession() throws CameraAccessException {
     builder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
     cameraDevice.createCaptureSession(
-        new ArrayList<>(), new CaptureSessionCallback(/*useExecutor=*/ false), new Handler());
+        new ArrayList<>(), new CaptureSessionCallback(/* useExecutor= */ false), new Handler());
   }
 
   @Test
@@ -109,7 +108,7 @@ public final class ShadowCameraDeviceImplTest {
             SessionConfiguration.SESSION_REGULAR,
             Collections.singletonList(new OutputConfiguration(mockSurface)),
             MoreExecutors.directExecutor(),
-            new CaptureSessionCallback(/*useExecutor=*/ true));
+            new CaptureSessionCallback(/* useExecutor= */ true));
     cameraDevice.createCaptureSession(configuration);
   }
 
@@ -125,7 +124,7 @@ public final class ShadowCameraDeviceImplTest {
             () ->
                 cameraDevice.createCaptureSession(
                     new ArrayList<>(),
-                    new CaptureSessionCallback(/*useExecutor=*/ false),
+                    new CaptureSessionCallback(/* useExecutor= */ false),
                     new Handler()));
     assertThat(thrown).hasMessageThat().contains("CameraDevice was already closed");
   }
@@ -141,7 +140,7 @@ public final class ShadowCameraDeviceImplTest {
             SessionConfiguration.SESSION_REGULAR,
             Collections.singletonList(new OutputConfiguration(mock(Surface.class))),
             MoreExecutors.directExecutor(),
-            new CaptureSessionCallback(/*useExecutor=*/ true));
+            new CaptureSessionCallback(/* useExecutor= */ true));
     IllegalStateException thrown =
         assertThrows(
             IllegalStateException.class, () -> cameraDevice.createCaptureSession(configuration));

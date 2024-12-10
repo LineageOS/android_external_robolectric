@@ -156,7 +156,6 @@ public class ShadowDevicePolicyManager {
   private Object /* DevicePolicyState */ devicePolicyState;
   private @RealObject DevicePolicyManager realObject;
 
-  
   private static class PackageAndPermission {
 
     public PackageAndPermission(String packageName, String permission) {
@@ -513,40 +512,37 @@ public class ShadowDevicePolicyManager {
     }
   }
 
-  private boolean hasPackage(String caller, String packageName) {
-    if (caller == null) {
-      return false;
-    }
-    return caller.contains(packageName);
-  }
-
   private void enforceCallerDelegated(String targetScope) {
-    if (!delegatedScopePackagesMap.containsKey(targetScope)
-        || delegatedScopePackagesMap.get(targetScope).isEmpty()) {
-      throw new SecurityException(targetScope + " is not delegated to any package.");
-    }
     String caller = context.getPackageName();
-    for (String packageName : delegatedScopePackagesMap.get(targetScope)) {
-      if (hasPackage(caller, packageName)) {
-        return;
-      }
+    if (!delegatedScopePackagesMap.containsKey(caller)
+        || !delegatedScopePackagesMap.get(caller).contains(targetScope)) {
+      throw new SecurityException("[" + caller + "] is not delegated with" + targetScope);
     }
-    throw new SecurityException("[" + caller + "] is not delegated with" + targetScope);
   }
 
   @Implementation(minSdk = O)
   protected void setDelegatedScopes(
       ComponentName admin, String delegatePackage, List<String> scopes) {
     enforceDeviceOwnerOrProfileOwner(admin);
-    for (String scope : scopes) {
-      if (delegatedScopePackagesMap.containsKey(scope)) {
-        Set<String> allowPackages = delegatedScopePackagesMap.get(scope);
-        allowPackages.add(delegatePackage);
-      } else {
-        ImmutableSet<String> allowPackages = ImmutableSet.of(delegatePackage);
-        delegatedScopePackagesMap.put(scope, allowPackages);
+    delegatedScopePackagesMap.put(delegatePackage, ImmutableSet.copyOf(scopes));
+  }
+
+  @Implementation(minSdk = O)
+  protected List<String> getDelegatedScopes(ComponentName admin, String delegatePackage) {
+    Objects.requireNonNull(delegatePackage, "Delegate package is null");
+    if (admin == null) {
+      String caller = context.getPackageName();
+      if (!Objects.equals(caller, delegatePackage)) {
+        throw new SecurityException(String.format("Caller is not %s.", delegatePackage));
       }
+      // this app is retrieving its own delegated scopes
+    } else {
+      enforceDeviceOwnerOrProfileOwner(admin);
     }
+    if (delegatedScopePackagesMap.containsKey(delegatePackage)) {
+      return ImmutableList.copyOf(delegatedScopePackagesMap.get(delegatePackage));
+    }
+    return ImmutableList.of();
   }
 
   @Implementation

@@ -1,8 +1,6 @@
 package org.robolectric.shadows;
 
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static android.os.Build.VERSION_CODES.LOLLIPOP_MR1;
-import static org.robolectric.RuntimeEnvironment.getApiLevel;
 import static org.robolectric.util.ReflectionHelpers.getField;
 import static org.robolectric.util.ReflectionHelpers.setField;
 import static org.robolectric.util.reflector.Reflector.reflector;
@@ -91,33 +89,34 @@ public class ShadowLegacyMessageQueue extends ShadowMessageQueue {
     final boolean retval =
         reflector(MessageQueueReflector.class, realQueue).enqueueMessage(msg, when);
     if (retval) {
-      final Runnable callback = new Runnable() {
-        @Override
-        public void run() {
-          synchronized (realQueue) {
-            Message m = getHead();
-            if (m == null) {
-              return;
-            }
-
-            Message n = shadowOf(m).getNext();
-            if (m == msg) {
-              setHead(n);
-            } else {
-              while (n != null) {
-                if (n == msg) {
-                  n = shadowOf(n).getNext();
-                  shadowOf(m).setNext(n);
-                  break;
+      final Runnable callback =
+          new Runnable() {
+            @Override
+            public void run() {
+              synchronized (realQueue) {
+                Message m = getHead();
+                if (m == null) {
+                  return;
                 }
-                m = n;
-                n = shadowOf(m).getNext();
+
+                Message n = shadowOf(m).getNext();
+                if (m == msg) {
+                  setHead(n);
+                } else {
+                  while (n != null) {
+                    if (n == msg) {
+                      n = shadowOf(n).getNext();
+                      shadowOf(m).setNext(n);
+                      break;
+                    }
+                    m = n;
+                    n = shadowOf(m).getNext();
+                  }
+                }
               }
+              dispatchMessage(msg);
             }
-          }
-          dispatchMessage(msg);
-        }
-      };
+          };
       shadowOf(msg).setScheduledRunnable(callback);
       if (when == 0) {
         scheduler.postAtFrontOfQueue(callback);
@@ -139,11 +138,7 @@ public class ShadowLegacyMessageQueue extends ShadowMessageQueue {
       msgProxy.markInUse();
       target.dispatchMessage(msg);
 
-      if (getApiLevel() >= LOLLIPOP) {
-        msgProxy.recycleUnchecked();
-      } else {
-        msgProxy.recycle();
-      }
+      msgProxy.recycleUnchecked();
     }
   }
 

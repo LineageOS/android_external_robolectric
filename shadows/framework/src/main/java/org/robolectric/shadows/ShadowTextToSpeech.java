@@ -1,6 +1,5 @@
 package org.robolectric.shadows;
 
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.robolectric.util.reflector.Reflector.reflector;
 
@@ -9,7 +8,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
-import android.speech.tts.TextToSpeech.Engine;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
 import com.google.common.collect.ImmutableList;
@@ -22,7 +20,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
@@ -113,11 +110,7 @@ public class ShadowTextToSpeech {
   @Implementation
   protected int speak(
       final String text, final int queueMode, final HashMap<String, String> params) {
-    if (RuntimeEnvironment.getApiLevel() >= LOLLIPOP) {
-      return reflector(TextToSpeechReflector.class, tts).speak(text, queueMode, params);
-    }
-    return speak(
-        text, queueMode, null, params == null ? null : params.get(Engine.KEY_PARAM_UTTERANCE_ID));
+    return reflector(TextToSpeechReflector.class, tts).speak(text, queueMode, params);
   }
 
   @Implementation
@@ -182,10 +175,30 @@ public class ShadowTextToSpeech {
     return TextToSpeech.LANG_NOT_SUPPORTED;
   }
 
+  /**
+   * Sets the text-to-speech language.
+   *
+   * <p>This method sets the current voice to the default one for the given Locale; getVoice() can
+   * be used to retrieve it.
+   */
   @Implementation
   protected int setLanguage(Locale locale) {
     this.language = locale;
-    return isLanguageAvailable(locale);
+    int languageAvailability = isLanguageAvailable(locale);
+
+    // Set to default voice (locale voice) if no voice is set.
+    if (languageAvailability >= TextToSpeech.LANG_AVAILABLE && this.currentVoice == null) {
+      setVoice(
+          new Voice(
+              locale.toLanguageTag(),
+              locale,
+              Voice.QUALITY_NORMAL,
+              Voice.LATENCY_NORMAL,
+              /* requiresNetworkConnection= */ false,
+              new HashSet<String>()));
+    }
+
+    return languageAvailability;
   }
 
   /**
@@ -243,6 +256,14 @@ public class ShadowTextToSpeech {
     return TextToSpeech.SUCCESS;
   }
 
+  /**
+   * Returns the Voice instance describing the voice currently being used for synthesis requests.
+   */
+  @Implementation
+  protected Voice getVoice() {
+    return this.currentVoice;
+  }
+
   @Implementation
   protected Set<Voice> getVoices() {
     return voices;
@@ -272,7 +293,9 @@ public class ShadowTextToSpeech {
     return shutdown;
   }
 
-  /** @return {@code true} if the TTS is stopped. */
+  /**
+   * @return {@code true} if the TTS is stopped.
+   */
   public boolean isStopped() {
     return stopped;
   }

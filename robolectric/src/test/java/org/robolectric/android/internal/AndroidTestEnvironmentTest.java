@@ -2,8 +2,7 @@ package org.robolectric.android.internal;
 
 import static android.os.Build.VERSION_CODES.O;
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.TruthJUnit.assume;
-import static org.junit.Assert.fail;
+import static org.junit.Assert.assertThrows;
 import static org.robolectric.annotation.ConscryptMode.Mode.OFF;
 import static org.robolectric.annotation.ConscryptMode.Mode.ON;
 import static org.robolectric.annotation.LooperMode.Mode.LEGACY;
@@ -23,8 +22,10 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.crypto.Cipher;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -42,9 +43,12 @@ import org.robolectric.annotation.ConscryptMode;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.annotation.experimental.LazyApplication;
 import org.robolectric.annotation.experimental.LazyApplication.LazyLoad;
+import org.robolectric.internal.ShadowProvider;
 import org.robolectric.manifest.AndroidManifest;
 import org.robolectric.manifest.RoboNotFoundException;
+import org.robolectric.pluginapi.TestEnvironmentLifecyclePlugin;
 import org.robolectric.plugins.HierarchicalConfigurationStrategy.ConfigurationImpl;
+import org.robolectric.plugins.StubSdk;
 import org.robolectric.res.ResourceTable;
 import org.robolectric.shadow.api.Shadow;
 import org.robolectric.shadows.ShadowApplication;
@@ -67,7 +71,8 @@ public class AndroidTestEnvironmentTest {
   }
 
   @Test
-  public void setUpApplicationState_setsBackgroundScheduler_toBeSameAsForeground_whenAdvancedScheduling() {
+  public void
+      setUpApplicationState_setsBackgroundScheduler_toBeSameAsForeground_whenAdvancedScheduling() {
     RoboSettings.setUseGlobalScheduler(true);
     try {
       bootstrapWrapper.callSetUpApplicationState();
@@ -103,10 +108,11 @@ public class AndroidTestEnvironmentTest {
   public void setUpApplicationState_setsMainThread_onAnotherThread() throws InterruptedException {
     final AtomicBoolean res = new AtomicBoolean();
     Thread t =
-        new Thread(() -> {
-          bootstrapWrapper.callSetUpApplicationState();
-          res.set(RuntimeEnvironment.isMainThread());
-        });
+        new Thread(
+            () -> {
+              bootstrapWrapper.callSetUpApplicationState();
+              res.set(RuntimeEnvironment.isMainThread());
+            });
     t.start();
     t.join();
     assertThat(res.get()).isTrue();
@@ -171,9 +177,7 @@ public class AndroidTestEnvironmentTest {
 
     bootstrapWrapper.callSetUpApplicationState();
 
-    String optsForO = RuntimeEnvironment.getApiLevel() >= O
-        ? "nowidecg-lowdr-"
-        : "";
+    String optsForO = RuntimeEnvironment.getApiLevel() >= O ? "nowidecg-lowdr-" : "";
     assertThat(RuntimeEnvironment.getQualifiers())
         .contains(
             "large-notlong-notround-"
@@ -185,8 +189,8 @@ public class AndroidTestEnvironmentTest {
   @Test
   public void setUpApplicationState_shouldCreateStorageDirs() {
     bootstrapWrapper.callSetUpApplicationState();
-    ApplicationInfo applicationInfo = ApplicationProvider.getApplicationContext()
-        .getApplicationInfo();
+    ApplicationInfo applicationInfo =
+        ApplicationProvider.getApplicationContext().getApplicationInfo();
 
     assertThat(applicationInfo.sourceDir).isNotNull();
     assertThat(new File(applicationInfo.sourceDir).exists()).isTrue();
@@ -202,8 +206,8 @@ public class AndroidTestEnvironmentTest {
   @Config(minSdk = Build.VERSION_CODES.N)
   public void setUpApplicationState_shouldCreateStorageDirs_Nplus() {
     bootstrapWrapper.callSetUpApplicationState();
-    ApplicationInfo applicationInfo = ApplicationProvider.getApplicationContext()
-        .getApplicationInfo();
+    ApplicationInfo applicationInfo =
+        ApplicationProvider.getApplicationContext().getApplicationInfo();
 
     assertThat(applicationInfo.credentialProtectedDataDir).isNotNull();
     assertThat(new File(applicationInfo.credentialProtectedDataDir).isDirectory()).isTrue();
@@ -225,20 +229,6 @@ public class AndroidTestEnvironmentTest {
         };
     bootstrapWrapper.tearDownApplication();
     assertThat(events).containsExactly("terminated");
-  }
-
-  @Test
-  public void testResourceNotFound() {
-    // not relevant for binary resources mode
-    assume().that(bootstrapWrapper.isLegacyResources()).isTrue();
-
-    try {
-      bootstrapWrapper.changeAppManifest(new ThrowingManifest(bootstrapWrapper.getAppManifest()));
-      bootstrapWrapper.callSetUpApplicationState();
-      fail("Expected to throw");
-    } catch (Resources.NotFoundException expected) {
-      // expected
-    }
   }
 
   /** Can't use Mockito for classloader issues */
@@ -354,5 +344,65 @@ public class AndroidTestEnvironmentTest {
         ApplicationProvider.getApplicationContext().getApplicationInfo();
     assertThat(applicationInfo.dataDir).isNotNull();
     assertThat(new File(applicationInfo.dataDir).isDirectory()).isTrue();
+  }
+
+  @Test
+  public void testResetterFails_reportsFailureAndContinues() {
+    // bootstrapWrapper is not used in this test, but calling `callSetUpApplicationState` is
+    // required to avoid exceptions in the test teardown.
+    bootstrapWrapper.callSetUpApplicationState();
+
+    WorkingShadowProvider workingShadowProvider = new WorkingShadowProvider();
+    ShadowProvider[] shadowProviders = new ShadowProvider[2];
+    shadowProviders[0] = new ThrowingShadowProvider();
+    shadowProviders[1] = workingShadowProvider;
+
+    TestEnvironmentLifecyclePlugin[] telpArray = new TestEnvironmentLifecyclePlugin[0];
+    AndroidTestEnvironment androidTestEnvironment =
+        new AndroidTestEnvironment(
+            new StubSdk(RuntimeEnvironment.getApiLevel(), true),
+            new StubSdk(RuntimeEnvironment.getApiLevel(), true),
+            shadowProviders,
+            telpArray);
+    RuntimeException e =
+        assertThrows(RuntimeException.class, () -> androidTestEnvironment.resetState());
+    assertThat(e).hasMessageThat().contains("Reset failed");
+    assertThat(workingShadowProvider.wasReset).isTrue();
+  }
+
+  private static class ThrowingShadowProvider implements ShadowProvider {
+    @Override
+    public void reset() {
+      throw new RuntimeException("Reset failed");
+    }
+
+    @Override
+    public String[] getProvidedPackageNames() {
+      return null;
+    }
+
+    @Override
+    public Collection<Entry<String, String>> getShadows() {
+      return new ArrayList<>();
+    }
+  }
+
+  private static class WorkingShadowProvider implements ShadowProvider {
+    public boolean wasReset = false;
+
+    @Override
+    public void reset() {
+      wasReset = true;
+    }
+
+    @Override
+    public String[] getProvidedPackageNames() {
+      return null;
+    }
+
+    @Override
+    public Collection<Entry<String, String>> getShadows() {
+      return new ArrayList<>();
+    }
   }
 }

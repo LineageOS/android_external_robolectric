@@ -1,6 +1,5 @@
 package org.robolectric.shadows;
 
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static android.os.Build.VERSION_CODES.P;
 import static android.os.Build.VERSION_CODES.Q;
 
@@ -9,11 +8,7 @@ import android.graphics.Matrix;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 
-@Implements(
-    className = "android.view.RenderNode",
-    isInAndroidSdk = false,
-    minSdk = LOLLIPOP,
-    maxSdk = P)
+@Implements(className = "android.view.RenderNode", isInAndroidSdk = false, maxSdk = P)
 public class ShadowRenderNode {
   private static final float NON_ZERO_EPSILON = 0.001f;
 

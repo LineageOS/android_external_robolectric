@@ -3,7 +3,6 @@ package org.robolectric.internal.bytecode;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -19,24 +18,31 @@ import org.robolectric.annotation.internal.DoNotInstrument;
 import org.robolectric.annotation.internal.Instrument;
 import org.robolectric.shadow.api.Shadow;
 
-/**
- * Configuration rules for {@link SandboxClassLoader}.
- */
+/** Configuration rules for {@link SandboxClassLoader}. */
 public class InstrumentationConfiguration {
 
   public static Builder newBuilder() {
     return new Builder();
   }
 
-  static final Set<String> CLASSES_TO_ALWAYS_ACQUIRE = Sets.newHashSet(
-      RobolectricInternals.class.getName(),
-      InvokeDynamicSupport.class.getName(),
-      Shadow.class.getName(),
+  static final ImmutableSet<String> CLASSES_TO_ALWAYS_ACQUIRE =
+      ImmutableSet.of(
+          RobolectricInternals.class.getName(),
+          InvokeDynamicSupport.class.getName(),
+          Shadow.class.getName());
 
-      // these classes are deprecated and will be removed soon:
-      "org.robolectric.util.FragmentTestUtil",
-      "org.robolectric.util.FragmentTestUtil$FragmentUtilActivity"
-  );
+  static final ImmutableSet<String> PACKAGES_TO_NEVER_ACQUIRE =
+      ImmutableSet.of(
+          "com.sun",
+          "java",
+          "javax",
+          "jdk.internal",
+          "org.junit",
+          "org.robolectric.annotation.",
+          "org.robolectric.internal.",
+          "org.robolectric.pluginapi.",
+          "org.robolectric.util.",
+          "sun");
 
   // Must always acquire these as they change from API level to API level
   static final ImmutableSet<String> RESOURCES_TO_ALWAYS_ACQUIRE =
@@ -108,8 +114,8 @@ public class InstrumentationConfiguration {
   /**
    * Determine if {@link SandboxClassLoader} should load a given class.
    *
-   * @param   name The fully-qualified class name.
-   * @return  True if the class should be loaded.
+   * @param name The fully-qualified class name.
+   * @return True if the class should be loaded.
    */
   public boolean shouldAcquire(String name) {
     if (CLASSES_TO_ALWAYS_ACQUIRE.contains(name)) {
@@ -131,13 +137,18 @@ public class InstrumentationConfiguration {
       return true;
     }
 
-    for (String packageName : packagesToNotAcquire) {
-      if (name.startsWith(packageName)) return false;
+    for (String packageName : PACKAGES_TO_NEVER_ACQUIRE) {
+      if (name.startsWith(packageName)) {
+        return false;
+      }
     }
 
-    // R classes must be loaded from system CP
-    boolean isRClass = name.matches(".*\\.R(|\\$[a-z]+)$");
-    return !isRClass && !classesToNotAcquire.contains(name);
+    for (String packageName : packagesToNotAcquire) {
+      if (name.startsWith(packageName)) {
+        return false;
+      }
+    }
+    return !classesToNotAcquire.contains(name);
   }
 
   /**
@@ -193,7 +204,6 @@ public class InstrumentationConfiguration {
     if (!instrumentedPackages.equals(that.instrumentedPackages)) return false;
     if (!instrumentedClasses.equals(that.instrumentedClasses)) return false;
     if (!interceptedMethods.equals(that.interceptedMethods)) return false;
-
 
     return true;
   }
@@ -256,9 +266,7 @@ public class InstrumentationConfiguration {
     public final Collection<String> packagesToNotInstrument = new HashSet<>();
     public String classesToNotInstrumentRegex;
 
-
-    public Builder() {
-    }
+    public Builder() {}
 
     public Builder(InstrumentationConfiguration classLoaderConfig) {
       instrumentedPackages.addAll(classLoaderConfig.instrumentedPackages);
@@ -322,7 +330,6 @@ public class InstrumentationConfiguration {
       return this;
     }
 
-    @SuppressWarnings("AndroidJdkLibsChecker")
     public InstrumentationConfiguration build() {
       // Remove redundant packages, e.g. remove 'android.os' if 'android.' is present.
       List<String> minimalPackages = new ArrayList<>(instrumentedPackages);

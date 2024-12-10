@@ -24,7 +24,6 @@ import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
-import android.os.Build;
 import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
 import android.os.Environment;
@@ -164,14 +163,14 @@ public class ShadowContextImpl {
   protected void sendBroadcast(Intent intent) {
     getShadowInstrumentation()
         .sendBroadcastWithPermission(
-            intent, /*userHandle=*/ null, /*receiverPermission=*/ null, realContextImpl);
+            intent, /* userHandle= */ null, /* receiverPermission= */ null, realContextImpl);
   }
 
   @Implementation
   protected void sendBroadcast(Intent intent, String receiverPermission) {
     getShadowInstrumentation()
         .sendBroadcastWithPermission(
-            intent, /*userHandle=*/ null, receiverPermission, realContextImpl);
+            intent, /* userHandle= */ null, receiverPermission, realContextImpl);
   }
 
   @Implementation(minSdk = TIRAMISU)
@@ -185,7 +184,7 @@ public class ShadowContextImpl {
   @RequiresPermission(android.Manifest.permission.INTERACT_ACROSS_USERS)
   protected void sendBroadcastAsUser(@RequiresPermission Intent intent, UserHandle user) {
     getShadowInstrumentation()
-        .sendBroadcastWithPermission(intent, user, /*receiverPermission=*/ null, realContextImpl);
+        .sendBroadcastWithPermission(intent, user, /* receiverPermission= */ null, realContextImpl);
   }
 
   @Implementation
@@ -214,7 +213,7 @@ public class ShadowContextImpl {
     getShadowInstrumentation()
         .sendOrderedBroadcastAsUser(
             intent,
-            /*userHandle=*/ null,
+            /* userHandle= */ null,
             receiverPermission,
             resultReceiver,
             scheduler,
@@ -377,9 +376,7 @@ public class ShadowContextImpl {
   // This is a private method in ContextImpl so we copy the relevant portions of it here.
   @Implementation
   protected void validateServiceIntent(Intent service) {
-    if (service.getComponent() == null
-        && service.getPackage() == null
-        && realContextImpl.getApplicationInfo().targetSdkVersion >= Build.VERSION_CODES.LOLLIPOP) {
+    if (service.getComponent() == null && service.getPackage() == null) {
       throw new IllegalArgumentException("Service Intent must be explicit: " + service);
     }
   }

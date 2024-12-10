@@ -1,7 +1,6 @@
 package org.robolectric.shadows;
 
 import static android.net.wifi.WifiManager.SCAN_RESULTS_AVAILABLE_ACTION;
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static android.os.Build.VERSION_CODES.Q;
 import static android.os.Build.VERSION_CODES.R;
 import static android.os.Build.VERSION_CODES.S;
@@ -38,12 +37,13 @@ import android.net.wifi.WifiManager.LocalOnlyConnectionFailureListener;
 import android.net.wifi.WifiManager.MulticastLock;
 import android.net.wifi.WifiManager.PnoScanResultsCallback;
 import android.net.wifi.WifiNetworkSpecifier;
+import android.net.wifi.WifiNetworkSuggestion;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.WifiUsabilityStatsEntry;
-import android.os.Build;
 import android.util.Pair;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -56,7 +56,6 @@ import org.mockito.ArgumentCaptor;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadow.api.Shadow;
-import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.versioning.AndroidVersions.U;
 
 @RunWith(AndroidJUnit4.class)
@@ -75,17 +74,9 @@ public class ShadowWifiManagerTest {
 
   @Test
   public void setWifiInfo_shouldUpdateWifiInfo() {
-    WifiInfo wifiInfo = newWifiInfo();
+    WifiInfo wifiInfo = new WifiInfo();
     shadowOf(wifiManager).setConnectionInfo(wifiInfo);
     assertThat(wifiManager.getConnectionInfo()).isSameInstanceAs(wifiInfo);
-  }
-
-  private static WifiInfo newWifiInfo() {
-    if (RuntimeEnvironment.getApiLevel() >= LOLLIPOP) {
-      return new WifiInfo();
-    } else {
-      return ReflectionHelpers.callConstructor(WifiInfo.class);
-    }
   }
 
   @Test
@@ -358,7 +349,6 @@ public class ShadowWifiManagerTest {
   }
 
   @Test
-  @Config(minSdk = Build.VERSION_CODES.LOLLIPOP)
   public void getPrivilegedConfiguredNetworks_shouldReturnConfiguredNetworks() {
     WifiConfiguration wifiConfiguration = new WifiConfiguration();
     wifiConfiguration.networkId = 123;
@@ -1322,6 +1312,41 @@ public class ShadowWifiManagerTest {
     executor.shutdown();
 
     assertThat(listener.incomingFailures).isEmpty();
+  }
+
+  @Test
+  @Config(minSdk = R)
+  public void addNetworkSuggestions_returnsSuccess() {
+    assertThat(wifiManager.getNetworkSuggestions()).isEmpty();
+    WifiNetworkSuggestion suggestion =
+        new WifiNetworkSuggestion.Builder()
+            .setSsid("TestWifi")
+            .setBssid(MacAddress.fromString("11:22:33:44:55:66"))
+            .build();
+
+    assertThat(wifiManager.addNetworkSuggestions(Collections.singletonList(suggestion)))
+        .isEqualTo(WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS);
+
+    assertThat(wifiManager.getNetworkSuggestions()).containsExactly(suggestion);
+  }
+
+  @Test
+  @Config(minSdk = R)
+  public void addNetworkSuggestions_returnsError() {
+    assertThat(wifiManager.getNetworkSuggestions()).isEmpty();
+    WifiNetworkSuggestion suggestion =
+        new WifiNetworkSuggestion.Builder()
+            .setSsid("TestWifi")
+            .setBssid(MacAddress.fromString("11:22:33:44:55:66"))
+            .build();
+    ((ShadowWifiManager) Shadow.extract(wifiManager))
+        .setAddNetworkSuggestionsResult(
+            WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_APP_DISALLOWED);
+
+    assertThat(wifiManager.addNetworkSuggestions(Collections.singletonList(suggestion)))
+        .isEqualTo(WifiManager.STATUS_NETWORK_SUGGESTIONS_ERROR_APP_DISALLOWED);
+
+    assertThat(wifiManager.getNetworkSuggestions()).isEmpty();
   }
 
   private static final class IncomingFailure {

@@ -25,10 +25,14 @@ import android.bluetooth.IBluetoothGatt;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.content.Context;
+import android.os.Binder;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
+import android.os.IBinder;
+import android.os.IInterface;
 import android.os.ParcelUuid;
 import android.provider.Settings;
+import android.util.Log;
 import com.google.common.collect.ImmutableList;
 import java.io.IOException;
 import java.time.Duration;
@@ -48,6 +52,7 @@ import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
 import org.robolectric.annotation.Resetter;
+import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.Direct;
 import org.robolectric.util.reflector.ForType;
@@ -366,21 +371,21 @@ public class ShadowBluetoothAdapter {
    * Needs looseSignatures because in Android T the return value of this method was changed from
    * bool to int.
    */
-  @Implementation
-  protected Object setScanMode(int scanMode) {
-    boolean result = true;
-    if (scanMode != BluetoothAdapter.SCAN_MODE_CONNECTABLE
-        && scanMode != BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE
-        && scanMode != BluetoothAdapter.SCAN_MODE_NONE) {
-      result = false;
-    }
-
+  @Implementation(maxSdk = S_V2)
+  protected boolean setScanMode(int scanMode) {
+    boolean result =
+        scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE
+            || scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE
+            || scanMode == BluetoothAdapter.SCAN_MODE_NONE;
     this.scanMode = scanMode;
-    if (RuntimeEnvironment.getApiLevel() >= VERSION_CODES.TIRAMISU) {
-      return result ? BluetoothStatusCodes.SUCCESS : BluetoothStatusCodes.ERROR_UNKNOWN;
-    } else {
-      return result;
-    }
+    return result;
+  }
+
+  @Implementation(minSdk = TIRAMISU, methodName = "setScanMode")
+  protected int setScanModeFromT(int scanMode) {
+    return setScanMode(scanMode)
+        ? BluetoothStatusCodes.SUCCESS
+        : BluetoothStatusCodes.ERROR_UNKNOWN;
   }
 
   @Implementation(maxSdk = Q)
@@ -608,6 +613,30 @@ public class ShadowBluetoothAdapter {
         }
       }
     }
+  }
+
+  @Implementation(minSdk = V.SDK_INT)
+  protected IBinder getProfile(int profile) {
+    if (isEnabled()) {
+      IInterface localProxy = createBinderProfileProxy(profile);
+      if (localProxy != null) {
+        Binder binder = new Binder();
+        binder.attachInterface(localProxy, "profile");
+        return binder;
+      }
+    }
+    return null;
+  }
+
+  private static IInterface createBinderProfileProxy(int profile) {
+    switch (profile) {
+      case BluetoothProfile.HEADSET:
+        return ReflectionHelpers.createNullProxy(android.bluetooth.IBluetoothHeadset.class);
+      case BluetoothProfile.A2DP:
+        return ReflectionHelpers.createNullProxy(android.bluetooth.IBluetoothA2dp.class);
+    }
+    Log.w("ShadowBluetoothAdapter", "getProfile called with unsupported profile " + profile);
+    return null;
   }
 
   /** Returns the last value of {@link #setIsLeExtendedAdvertisingSupported}, defaulting to true. */

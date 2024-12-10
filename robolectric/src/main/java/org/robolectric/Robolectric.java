@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.os.Looper;
 import android.util.AttributeSet;
 import android.view.View;
+import java.lang.reflect.Modifier;
 import javax.annotation.Nullable;
 import org.robolectric.android.AttributeSetBuilderImpl;
 import org.robolectric.android.AttributeSetBuilderImpl.ArscResourceResolver;
@@ -40,7 +41,8 @@ public class Robolectric {
     return buildService(serviceClass, null);
   }
 
-  public static <T extends Service> ServiceController<T> buildService(Class<T> serviceClass, Intent intent) {
+  public static <T extends Service> ServiceController<T> buildService(
+      Class<T> serviceClass, Intent intent) {
     return ServiceController.of(instantiateService(serviceClass, intent), intent);
   }
 
@@ -48,11 +50,13 @@ public class Robolectric {
     return buildService(serviceClass).create().get();
   }
 
-  public static <T extends IntentService> IntentServiceController<T> buildIntentService(Class<T> serviceClass) {
+  public static <T extends IntentService> IntentServiceController<T> buildIntentService(
+      Class<T> serviceClass) {
     return buildIntentService(serviceClass, null);
   }
 
-  public static <T extends IntentService> IntentServiceController<T> buildIntentService(Class<T> serviceClass, Intent intent) {
+  public static <T extends IntentService> IntentServiceController<T> buildIntentService(
+      Class<T> serviceClass, Intent intent) {
     return IntentServiceController.of(instantiateService(serviceClass, intent), intent);
   }
 
@@ -60,7 +64,8 @@ public class Robolectric {
     return buildIntentService(serviceClass).create().get();
   }
 
-  public static <T extends ContentProvider> ContentProviderController<T> buildContentProvider(Class<T> contentProviderClass) {
+  public static <T extends ContentProvider> ContentProviderController<T> buildContentProvider(
+      Class<T> contentProviderClass) {
     return ContentProviderController.of(instantiateContentProvider(contentProviderClass));
   }
 
@@ -68,7 +73,8 @@ public class Robolectric {
     return buildContentProvider(contentProviderClass).create().get();
   }
 
-  public static <T extends ContentProvider> T setupContentProvider(Class<T> contentProviderClass, String authority) {
+  public static <T extends ContentProvider> T setupContentProvider(
+      Class<T> contentProviderClass, String authority) {
     return buildContentProvider(contentProviderClass).create(authority).get();
   }
 
@@ -114,6 +120,9 @@ public class Robolectric {
     checkState(
         Thread.currentThread() == Looper.getMainLooper().getThread(),
         "buildActivity must be called on main Looper thread");
+    if (Modifier.isAbstract(activityClass.getModifiers())) {
+      throw new RuntimeException("buildActivity must be called with non-abstract class");
+    }
     return ActivityController.of(
         instantiateActivity(activityClass, intent), intent, activityOptions);
   }
@@ -218,7 +227,8 @@ public class Robolectric {
   @Deprecated
   public static <T extends Fragment> FragmentController<T> buildFragment(
       Class<T> fragmentClass, Intent intent, Bundle arguments) {
-    return FragmentController.of(ReflectionHelpers.callConstructor(fragmentClass), intent, arguments);
+    return FragmentController.of(
+        ReflectionHelpers.callConstructor(fragmentClass), intent, arguments);
   }
 
   /**
@@ -241,7 +251,8 @@ public class Robolectric {
   @Deprecated
   public static <T extends Fragment> FragmentController<T> buildFragment(
       Class<T> fragmentClass, Class<? extends Activity> activityClass, Intent intent) {
-    return FragmentController.of(ReflectionHelpers.callConstructor(fragmentClass), activityClass, intent);
+    return FragmentController.of(
+        ReflectionHelpers.callConstructor(fragmentClass), activityClass, intent);
   }
 
   /**
@@ -262,7 +273,8 @@ public class Robolectric {
   @Deprecated
   public static <T extends Fragment> FragmentController<T> buildFragment(
       Class<T> fragmentClass, Class<? extends Activity> activityClass, Bundle arguments) {
-    return FragmentController.of(ReflectionHelpers.callConstructor(fragmentClass), activityClass, arguments);
+    return FragmentController.of(
+        ReflectionHelpers.callConstructor(fragmentClass), activityClass, arguments);
   }
 
   /**
@@ -288,10 +300,12 @@ public class Robolectric {
       Class<? extends Activity> activityClass,
       Intent intent,
       Bundle arguments) {
-    return FragmentController.of(ReflectionHelpers.callConstructor(fragmentClass), activityClass, intent, arguments);
+    return FragmentController.of(
+        ReflectionHelpers.callConstructor(fragmentClass), activityClass, intent, arguments);
   }
 
-  public static <T extends BackupAgent> BackupAgentController<T> buildBackupAgent(Class<T> backupAgentClass) {
+  public static <T extends BackupAgent> BackupAgentController<T> buildBackupAgent(
+      Class<T> backupAgentClass) {
     return BackupAgentController.of(ReflectionHelpers.callConstructor(backupAgentClass));
   }
 
@@ -302,13 +316,12 @@ public class Robolectric {
   /**
    * Allows for the programmatic creation of an {@link AttributeSet}.
    *
-   * Useful for testing {@link View} classes without the need for creating XML snippets.
+   * <p>Useful for testing {@link View} classes without the need for creating XML snippets.
    */
   public static org.robolectric.android.AttributeSetBuilder buildAttributeSet() {
 
-      return new AttributeSetBuilderImpl(
-          new ArscResourceResolver(RuntimeEnvironment.getApplication())) {};
-
+    return new AttributeSetBuilderImpl(
+        new ArscResourceResolver(RuntimeEnvironment.getApplication())) {};
   }
 
   /**
@@ -321,7 +334,7 @@ public class Robolectric {
     /**
      * Set an attribute to the given value.
      *
-     * The value will be interpreted according to the attribute's format.
+     * <p>The value will be interpreted according to the attribute's format.
      *
      * @param resId The attribute resource id to set.
      * @param value The value to set.
@@ -332,7 +345,7 @@ public class Robolectric {
     /**
      * Set the style attribute to the given value.
      *
-     * The value will be interpreted as a resource reference.
+     * <p>The value will be interpreted as a resource reference.
      *
      * @param value The value for the specified attribute in this {@link AttributeSet}.
      * @return This {@link org.robolectric.android.AttributeSetBuilder}.
@@ -356,9 +369,7 @@ public class Robolectric {
     return RuntimeEnvironment.getMasterScheduler();
   }
 
-  /**
-   * Execute all runnables that have been enqueued on the foreground scheduler.
-   */
+  /** Execute all runnables that have been enqueued on the foreground scheduler. */
   public static void flushForegroundThreadScheduler() {
     getForegroundThreadScheduler().advanceToLastPostedRunnable();
   }
@@ -372,9 +383,7 @@ public class Robolectric {
     return ShadowApplication.getInstance().getBackgroundThreadScheduler();
   }
 
-  /**
-   * Execute all runnables that have been enqueued on the background scheduler.
-   */
+  /** Execute all runnables that have been enqueued on the background scheduler. */
   public static void flushBackgroundThreadScheduler() {
     getBackgroundThreadScheduler().advanceToLastPostedRunnable();
   }

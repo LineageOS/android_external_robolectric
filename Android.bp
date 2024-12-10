@@ -104,7 +104,7 @@ java_device_for_host {
         "services.accessibility",
         "telephony-common",
         "android.car",
-        "android.car.builtin",
+        "android.car.builtin.impl",
     ],
 }
 
@@ -180,6 +180,50 @@ java_library_host {
     ],
 }
 
+// Using visibility as allow list for tests to bypass strict_mode
+java_library {
+    name: "robolectric_non_strict_mode_permission",
+    sdk_version: "current",
+    visibility: [
+        ":__subpackages__",
+        "//vendor:__subpackages__",
+        "//platform_testing/robolab/roboStandaloneProj/tests:__pkg__",
+        "//packages/modules/DeviceLock/DeviceLockController/tests/robolectric:__pkg__",
+        "//packages/apps/StorageManager/robotests:__pkg__",
+        "//packages/apps/KeyChain/robotests:__pkg__",
+        "//packages/apps/CertInstaller/robotests:__pkg__",
+        "//packages/services/Mms/tests/robotests:__pkg__",
+        "//packages/apps/Car/Cluster/DirectRenderingCluster/tests/robotests:__pkg__",
+        "//packages/apps/QuickAccessWallet/tests/robolectric:__pkg__",
+        "//packages/services/Car/tests/CarLibTests:__pkg__",
+        "//frameworks/libs/systemui:__subpackages__",
+        "//packages/apps/WallpaperPicker2/tests/robotests:__pkg__",
+        "//frameworks/opt/wear/signaldetector/robotests:__pkg__",
+        "//packages/apps/EmergencyInfo/tests/robolectric:__pkg__",
+        "//packages/modules/Bluetooth/service:__pkg__",
+        "//frameworks/opt/wear/robotests:__pkg__",
+        "//packages/apps/ThemePicker/tests/robotests:__pkg__",
+        "//packages/modules/DeviceLock/tests/unittests:__pkg__",
+        "//external/mobile-data-download/javatests:__pkg__",
+        "//frameworks/opt/car/setupwizard/library/main/tests/robotests:__pkg__",
+        "//packages/apps/Car/Notification/tests/robotests:__pkg__",
+        "//packages/apps/TvSettings/Settings/tests/robotests:__pkg__",
+        "//packages/apps/Car/Settings/tests/robotests:__pkg__",
+        "//packages/apps/Car/SystemUI:__pkg__",
+        "//packages/apps/Settings/tests/robotests:__pkg__",
+        "//frameworks/base/packages/SystemUI:__pkg__",
+        "//frameworks/base/services/robotests:__pkg__",
+        "//frameworks/base/services/robotests/backup:__pkg__",
+        "//frameworks/base/packages/CredentialManager/wear/robotests",
+        "//frameworks/base/tests/InputScreenshotTest:__subpackages__",
+        "//frameworks/base/packages/SettingsLib:__subpackages__",
+        "//packages/apps/TV/common/tests/robotests:__pkg__",
+        "//packages/apps/Launcher3/tests:__pkg__",
+        "//packages/apps/Car/Launcher/libs/appgrid/lib/robotests:__pkg__",
+        "//cts/tests:__subpackages__",
+    ],
+}
+
 // Make Robolectric_all available as a target jar, but treated as an aar
 java_host_for_device {
     name: "Robolectric_all-target_upstream",
@@ -226,6 +270,7 @@ java_host_for_device {
         "//packages/apps/Car/Launcher/libs/appgrid/lib/robotests:__pkg__",
         "//packages/apps/Car/Cluster/DirectRenderingCluster/tests/robotests:__pkg__",
         "//packages/apps/Car/Settings/tests/robotests:__pkg__",
+        "//packages/apps/Car/SystemUI:__pkg__",
         "//packages/apps/EmergencyInfo/tests/robolectric:__pkg__",
         "//packages/apps/StorageManager/robotests:__pkg__",
         "//packages/apps/Settings/tests/robotests:__pkg__",
@@ -242,6 +287,7 @@ java_host_for_device {
         "//frameworks/base/packages/BackupEncryption/test/robolectric-integration:__pkg__",
         "//frameworks/base/packages/BackupEncryption/test/robolectric:__pkg__",
         "//packages/apps/Settings/tests/screenshot:__pkg__",
+        "//cts/tests:__subpackages__",
     ],
 }
 

@@ -599,6 +599,28 @@ public class ShadowActivityTest {
     }
   }
 
+  public static final class ShowWhenLockedActivity extends Activity {}
+
+  public static final class DoNotShowWhenLockedActivity extends Activity {}
+
+  @Test
+  @Config(minSdk = O_MR1)
+  public void createActivity_showWhenLockedEnabled_returnsTrueForShowWhenLocked() {
+    try (ActivityController<ShowWhenLockedActivity> controller =
+        Robolectric.buildActivity(ShowWhenLockedActivity.class)) {
+      assertThat(shadowOf(controller.get()).getShowWhenLocked()).isTrue();
+    }
+  }
+
+  @Test
+  @Config(minSdk = O_MR1)
+  public void createActivity_showWhenLockedDisabled_returnsFalseForShowWhenLocked() {
+    try (ActivityController<DoNotShowWhenLockedActivity> controller =
+        Robolectric.buildActivity(DoNotShowWhenLockedActivity.class)) {
+      assertThat(shadowOf(controller.get()).getShowWhenLocked()).isFalse();
+    }
+  }
+
   @Test // unclear what the correct behavior should be here...
   public void shouldPopulateWindowDecorViewWithMergeLayoutContents() {
     try (ActivityController<Activity> controller = Robolectric.buildActivity(Activity.class)) {
@@ -1502,6 +1524,18 @@ public class ShadowActivityTest {
   }
 
   @Test
+  public void buildActivity_abstractActivityClass_throwsRuntimeException() {
+    Throwable throwable =
+        assertThrows(
+            RuntimeException.class,
+            () -> {
+              Robolectric.buildActivity(AbstractTestActivity.class, null);
+            });
+    assertThat(throwable.getMessage())
+        .isEqualTo("buildActivity must be called with non-abstract class");
+  }
+
+  @Test
   @Config(minSdk = Q)
   public void callOnGetDirectActions_succeeds() {
     try (ActivityController<TestActivity> controller =
@@ -1776,6 +1810,9 @@ public class ShadowActivityTest {
       transcript.add("onActivityDestroyed");
     }
   }
+
+  /** Test Activity for abstract checking scenario. */
+  abstract static class AbstractTestActivity extends Activity {}
 
   /** Activity for testing */
   public static class TestActivityWithAnotherTheme

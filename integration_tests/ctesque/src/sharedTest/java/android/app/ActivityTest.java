@@ -1,6 +1,7 @@
 package android.app;
 
 import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.assertThrows;
 
 import android.graphics.drawable.ColorDrawable;
 import android.widget.Button;
@@ -9,17 +10,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.robolectric.annotation.internal.DoNotInstrument;
+import org.robolectric.testapp.AbstractTestActivity;
 import org.robolectric.testapp.ActivityWithAnotherTheme;
 import org.robolectric.testapp.ActivityWithoutTheme;
 import org.robolectric.testapp.R;
 
-@DoNotInstrument
 @RunWith(AndroidJUnit4.class)
 public class ActivityTest {
 
   @Before
-  public void setUp() throws Exception {
+  public void setUp() {
     ActivityWithAnotherTheme.setThemeBeforeContentView = null;
   }
 
@@ -76,5 +76,17 @@ public class ActivityTest {
             assertThat(background.getColor()).isEqualTo(0xff00ff00);
           });
     }
+  }
+
+  @Test
+  public void launchActivity_abstractActivity_throwsRuntimeException() {
+    assertThrows(
+        RuntimeException.class,
+        () -> {
+          try (ActivityScenario<AbstractTestActivity> scenario =
+              ActivityScenario.launch(AbstractTestActivity.class)) {
+            assertThat(scenario).isNull();
+          }
+        });
   }
 }

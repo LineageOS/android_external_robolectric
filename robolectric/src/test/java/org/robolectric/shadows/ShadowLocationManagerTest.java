@@ -902,7 +902,6 @@ public class ShadowLocationManagerTest {
   }
 
   @Test
-  @Config(minSdk = VERSION_CODES.LOLLIPOP)
   public void testRequestLocationUpdates_LocationRequest() {
     Location loc1 = createLocation(NETWORK_PROVIDER);
     Location loc2 = createLocation(NETWORK_PROVIDER);
@@ -1768,8 +1767,7 @@ public class ShadowLocationManagerTest {
     }
 
     @Override
-    public void onStatusChanged(String s, int i, Bundle bundle) {
-    }
+    public void onStatusChanged(String s, int i, Bundle bundle) {}
 
     @Override
     public void onProviderEnabled(String s) {

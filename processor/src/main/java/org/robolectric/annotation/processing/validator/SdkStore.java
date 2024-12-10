@@ -31,6 +31,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
+import javax.lang.model.element.AnnotationMirror;
+import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
@@ -45,6 +47,7 @@ import org.objectweb.asm.signature.SignatureReader;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.util.TraceSignatureVisitor;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.InDevelopment;
 import org.robolectric.versioning.AndroidVersionInitTools;
@@ -277,22 +280,27 @@ public class SdkStore {
      * @return a string describing any problems with this method, or null if it checks out.
      */
     public String verifyMethod(
-        String sdkClassName, ExecutableElement methodElement, boolean looseSignatures) {
+        String sdkClassName,
+        ExecutableElement methodElement,
+        boolean looseSignatures,
+        boolean allowInDev) {
       ClassInfo classInfo = getClassInfo(sdkClassName);
 
       // Probably should not be reachable
-      if (classInfo == null && !suppressWarnings(methodElement.getEnclosingElement(), null)) {
+      if (classInfo == null
+          && !suppressWarnings(methodElement.getEnclosingElement(), null, allowInDev)) {
         return null;
       }
 
       MethodExtraInfo sdkMethod = classInfo.findMethod(methodElement, looseSignatures);
-      if (sdkMethod == null && !suppressWarnings(methodElement, null)) {
-        return "No such method in " + sdkClassName;
+      if (sdkMethod == null && !suppressWarnings(methodElement, null, allowInDev)) {
+        return "No method " + methodElement + " in " + sdkClassName;
       }
       if (sdkMethod != null) {
         MethodExtraInfo implMethod = new MethodExtraInfo(methodElement);
         if (!sdkMethod.equals(implMethod)
-            && !suppressWarnings(methodElement, "robolectric.ShadowReturnTypeMismatch")) {
+            && !suppressWarnings(
+                methodElement, "robolectric.ShadowReturnTypeMismatch", allowInDev)) {
           if (implMethod.isStatic != sdkMethod.isStatic) {
             return "@Implementation for "
                 + methodElement.getSimpleName()
@@ -329,7 +337,7 @@ public class SdkStore {
      * @param warningName the name of the warning, if null, @InDevelopment will still be honored.
      * @return true if the warning should be suppressed, else false
      */
-    boolean suppressWarnings(Element annotatedElement, String warningName) {
+    boolean suppressWarnings(Element annotatedElement, String warningName, boolean allowInDev) {
       SuppressWarnings[] suppressWarnings =
           annotatedElement.getAnnotationsByType(SuppressWarnings.class);
       for (SuppressWarnings suppression : suppressWarnings) {
@@ -340,7 +348,15 @@ public class SdkStore {
         }
       }
       InDevelopment[] inDev = annotatedElement.getAnnotationsByType(InDevelopment.class);
-      if (inDev.length > 0 && !sdkRelease.isReleased()) {
+      // Marked in development, sdk is not released, or is the last release (which may still be
+      // marked unreleased in g/main aosp/main.
+      if (allowInDev
+          && inDev.length > 0
+          && (!sdkRelease.isReleased()
+              || sdkRelease
+                  == AndroidVersions.getReleases().stream()
+                      .max(AndroidVersions.AndroidRelease::compareTo)
+                      .get())) {
         return true;
       }
       return false;
@@ -411,21 +427,22 @@ public class SdkStore {
         tempFile.deleteOnExit();
         tempDir = tempFile.getParentFile();
       }
-      InputStream jarIn = SdkStore.class.getClassLoader().getResourceAsStream(resourcePath);
-      if (jarIn == null) {
-        throw new RuntimeException("SDK " + resourcePath + " not found");
-      }
-      File outFile = new File(tempDir, new File(resourcePath).getName());
-      outFile.deleteOnExit();
-      try (FileOutputStream jarOut = new FileOutputStream(outFile)) {
-        byte[] buffer = new byte[4096];
-        int len;
-        while ((len = jarIn.read(buffer)) != -1) {
-          jarOut.write(buffer, 0, len);
+      try (InputStream jarIn = SdkStore.class.getClassLoader().getResourceAsStream(resourcePath)) {
+        if (jarIn == null) {
+          throw new RuntimeException("SDK " + resourcePath + " not found");
         }
-      }
+        File outFile = new File(tempDir, new File(resourcePath).getName());
+        outFile.deleteOnExit();
+        try (FileOutputStream jarOut = new FileOutputStream(outFile)) {
+          byte[] buffer = new byte[4096];
+          int len;
+          while ((len = jarIn.read(buffer)) != -1) {
+            jarOut.write(buffer, 0, len);
+          }
+        }
 
-      return outFile;
+        return outFile;
+      }
     }
 
     private ClassNode loadClassNode(String name) {
@@ -574,6 +591,25 @@ public class SdkStore {
       for (VariableElement variableElement : methodElement.getParameters()) {
         TypeMirror varTypeMirror = variableElement.asType();
         String paramType = canonicalize(varTypeMirror);
+
+        // If parameter is annotated with @ClassName, then use the indicated type instead.
+        List<? extends AnnotationMirror> annotationMirrors = variableElement.getAnnotationMirrors();
+        for (AnnotationMirror am : annotationMirrors) {
+          if (am.getAnnotationType().toString().equals(ClassName.class.getName())) {
+            Map<? extends ExecutableElement, ? extends AnnotationValue> annotationEntries =
+                am.getElementValues();
+            Set<? extends ExecutableElement> keys = annotationEntries.keySet();
+            for (ExecutableElement key : keys) {
+              if ("value()".equals(key.toString())) {
+                AnnotationValue annotationValue = annotationEntries.get(key);
+                paramType = annotationValue.getValue().toString().replace('$', '.');
+                break;
+              }
+            }
+            break;
+          }
+        }
+
         String paramTypeWithoutGenerics = typeWithoutGenerics(paramType);
         paramTypes.add(paramTypeWithoutGenerics);
       }
@@ -586,7 +622,14 @@ public class SdkStore {
       } else if (STATIC_INITIALIZER_METHOD_NAME.equals(name)) {
         return "<clinit>";
       } else {
-        return name;
+        Implementation implementation = methodElement.getAnnotation(Implementation.class);
+        String methodName = implementation == null ? "" : implementation.methodName();
+        methodName = methodName == null ? "" : methodName.trim();
+        if (methodName.isEmpty()) {
+          return name;
+        } else {
+          return methodName;
+        }
       }
     }
 

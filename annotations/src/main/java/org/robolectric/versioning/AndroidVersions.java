@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.jar.JarFile;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import javax.annotation.Nullable;
 
@@ -711,13 +712,42 @@ public final class AndroidVersions {
    * SDK API Level: 34+ <br>
    * release: false <br>
    */
-  public static final class V extends AndroidUnreleased {
+  public static final class V extends AndroidReleased {
 
     public static final int SDK_INT = 35;
 
     public static final String SHORT_CODE = "V";
 
     public static final String VERSION = "15";
+
+    @Override
+    public int getSdkInt() {
+      return SDK_INT;
+    }
+
+    @Override
+    public String getShortCode() {
+      return SHORT_CODE;
+    }
+
+    @Override
+    public String getVersion() {
+      return VERSION;
+    }
+  }
+
+  /**
+   * Placeholder for the next InDevelopment SDK after V
+   *
+   * <p>All values here subject to change.
+   */
+  public static final class W extends AndroidUnreleased {
+
+    public static final int SDK_INT = 36;
+
+    public static final String SHORT_CODE = "W";
+
+    public static final String VERSION = "16";
 
     @Override
     public int getSdkInt() {
@@ -748,23 +778,11 @@ public final class AndroidVersions {
   }
 
   public static List<AndroidRelease> getReleases() {
-    List<AndroidRelease> output = new ArrayList<>();
-    for (AndroidRelease release : information.allReleases) {
-      if (release.isReleased()) {
-        output.add(release);
-      }
-    }
-    return output;
+    return information.released;
   }
 
   public static List<AndroidRelease> getUnreleased() {
-    List<AndroidRelease> output = new ArrayList<>();
-    for (AndroidRelease release : information.allReleases) {
-      if (!release.isReleased()) {
-        output.add(release);
-      }
-    }
-    return output;
+    return information.unreleased;
   }
 
   /**
@@ -776,6 +794,8 @@ public final class AndroidVersions {
     final List<Class<? extends AndroidRelease>> classesWithIllegalNames;
     final AndroidRelease latestRelease;
     final AndroidRelease earliestUnreleased;
+    final List<AndroidRelease> unreleased;
+    final List<AndroidRelease> released;
 
     // In the future we may need a multimap for sdkInts should they stay static across releases.
     final Map<Integer, AndroidRelease> sdkIntToAllReleases = new HashMap<>();
@@ -794,17 +814,27 @@ public final class AndroidVersions {
       AndroidRelease earliestUnreleased = null;
       for (AndroidRelease release : allReleases) {
         if (release.isReleased()) {
-          if (latestRelease == null || latestRelease.compareTo(release) > 0) {
+          if (latestRelease == null || release.compareTo(latestRelease) > 0) {
             latestRelease = release;
           }
         } else {
-          if (earliestUnreleased == null || earliestUnreleased.compareTo(release) < 0) {
+          if (earliestUnreleased == null || release.compareTo(earliestUnreleased) < 0) {
             earliestUnreleased = release;
           }
         }
       }
       this.latestRelease = latestRelease;
       this.earliestUnreleased = earliestUnreleased;
+      this.unreleased =
+          allReleases.stream()
+              .filter(r -> !r.isReleased())
+              .sorted()
+              .collect(Collectors.toUnmodifiableList());
+      this.released =
+          allReleases.stream()
+              .filter(AndroidRelease::isReleased)
+              .sorted()
+              .collect(Collectors.toUnmodifiableList());
       verifyStaticInformation();
     }
 
@@ -933,11 +963,23 @@ public final class AndroidVersions {
                 .append(codename)
                 .append("\"\n");
           } else if (current.isReleased()) {
-            detectedProblems
+            StringBuilder problem = new StringBuilder();
+            problem
                 .append("The current sdk ")
                 .append(current.getShortCode())
                 .append(" has been been marked as released. Please update the ")
                 .append("contents of current sdk jar to the released version.\n");
+            if (current.getSdkInt() < latestRelease.getSdkInt()) {
+              // If the current sdk is lower than the latest release it should never be reported as
+              // unreleased.
+              detectedProblems.append(problem);
+            } else {
+              // If the current sdk is the latest release and it is reporting itself as unreleased
+              //  we simply log as this will occur when android build devs have not yet updated the
+              // branch's build definitions.  (git/main and aosp/main still claim to be the
+              // unreleased version of the latest release)
+              System.err.println(problem);
+            }
           }
           if (detectedProblems.length() > 0) {
             errorMessage(detectedProblems.toString(), null);

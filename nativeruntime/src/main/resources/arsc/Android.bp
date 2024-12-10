@@ -18,8 +18,8 @@ genrule {
     out: ["values/public.xml"],
     cmd: "mkdir -p $(genDir)/values; echo '<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
         " <resources>" +
-        " <public type=\"string\" name=\"config_bodyFontFamily\" id=\"0x010401f8\" /> " +
-        " <public type=\"string\" name=\"config_headlineFontFamily\" id=\"0x0104026d\" /> " +
+        " <public type=\"string\" name=\"config_bodyFontFamily\" id=\"0x010401fe\" /> " +
+        " <public type=\"string\" name=\"config_headlineFontFamily\" id=\"0x01040273\" /> " +
         " </resources>' > $(out)",
 }
 

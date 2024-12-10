@@ -1,5 +1,6 @@
 package org.robolectric.shadows;
 
+import static android.bluetooth.BluetoothDevice.BOND_BONDING;
 import static android.bluetooth.BluetoothDevice.BOND_NONE;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.os.Build.VERSION_CODES.M;
@@ -7,6 +8,7 @@ import static android.os.Build.VERSION_CODES.O;
 import static android.os.Build.VERSION_CODES.O_MR1;
 import static android.os.Build.VERSION_CODES.Q;
 import static android.os.Build.VERSION_CODES.S;
+import static android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
 import static org.robolectric.util.reflector.Reflector.reflector;
 
 import android.annotation.IntRange;
@@ -85,6 +87,7 @@ public class ShadowBluetoothDevice {
   private boolean isInSilenceMode = false;
   private boolean isConnected = false;
   @Nullable private BluetoothGattConnectionInterceptor bluetoothGattConnectionInterceptor = null;
+  private Map<Integer, Integer> connectionHandlesByTransportType = new HashMap<>();
 
   /**
    * Implements getService() in the same way the original method does, but ignores any Exceptions
@@ -215,6 +218,15 @@ public class ShadowBluetoothDevice {
   /** Sets value of bond state for {@link BluetoothDevice#getBondState}. */
   public void setBondState(int bondState) {
     this.bondState = bondState;
+  }
+
+  @Implementation
+  protected boolean cancelBondProcess() {
+    if (bondState == BOND_BONDING) {
+      setBondState(BOND_NONE);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -442,6 +454,18 @@ public class ShadowBluetoothDevice {
 
   public void setConnected(boolean isConnected) {
     this.isConnected = isConnected;
+  }
+
+  @Implementation(minSdk = UPSIDE_DOWN_CAKE)
+  protected int getConnectionHandle(int transport) {
+    if (!connectionHandlesByTransportType.containsKey(transport)) {
+      return 0;
+    }
+    return connectionHandlesByTransportType.get(transport);
+  }
+
+  public void setConnectionHandle(int transport, int connectionHandle) {
+    connectionHandlesByTransportType.put(transport, connectionHandle);
   }
 
   @Implementation(minSdk = Q)

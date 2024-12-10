@@ -24,16 +24,15 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.GraphicsMode;
 import org.robolectric.annotation.LooperMode;
 import org.robolectric.annotation.LooperMode.Mode;
+import org.robolectric.annotation.ResourcesMode;
 import org.robolectric.annotation.SQLiteMode;
 import org.robolectric.config.AndroidConfigurer;
 import org.robolectric.interceptors.AndroidInterceptors;
 import org.robolectric.internal.AndroidSandbox;
-import org.robolectric.internal.BuckManifestFactory;
 import org.robolectric.internal.DefaultManifestFactory;
 import org.robolectric.internal.ManifestFactory;
 import org.robolectric.internal.ManifestIdentifier;
 import org.robolectric.internal.MavenManifestFactory;
-import org.robolectric.internal.ResourcesMode;
 import org.robolectric.internal.SandboxManager;
 import org.robolectric.internal.SandboxTestRunner;
 import org.robolectric.internal.TestEnvironment;
@@ -63,6 +62,7 @@ import org.robolectric.util.inject.Injector;
 public class RobolectricTestRunner extends SandboxTestRunner {
 
   public static final String CONFIG_PROPERTIES = "robolectric.properties";
+  private static final int MAX_DATA_DIR_NAME_LENGTH = 120;
   private static final Injector DEFAULT_INJECTOR = defaultInjector().build();
   private static final Map<ManifestIdentifier, AndroidManifest> appManifestsCache = new HashMap<>();
 
@@ -194,15 +194,14 @@ public class RobolectricTestRunner extends SandboxTestRunner {
         List<Sdk> sdksToRun = sdkPicker.selectSdks(configuration, appManifest);
         RobolectricFrameworkMethod last = null;
         for (Sdk sdk : sdksToRun) {
-            children.add(
-                last =
-                    new RobolectricFrameworkMethod(
-                        frameworkMethod.getMethod(),
-                        appManifest,
-                        sdk,
-                        configuration,
-                        ResourcesMode.BINARY,
-                        alwaysIncludeVariantMarkersInName));
+          children.add(
+              last =
+                  new RobolectricFrameworkMethod(
+                      frameworkMethod.getMethod(),
+                      appManifest,
+                      sdk,
+                      configuration,
+                      alwaysIncludeVariantMarkersInName));
         }
         if (last != null) {
           last.dontIncludeVariantMarkersInTestName();
@@ -228,7 +227,11 @@ public class RobolectricTestRunner extends SandboxTestRunner {
     Sdk sdk = roboMethod.getSdk();
 
     InstrumentationConfiguration classLoaderConfig = createClassLoaderConfig(method);
-    ResourcesMode resourcesMode = roboMethod.getResourcesMode();
+    ResourcesMode.Mode resourcesMode =
+        roboMethod.configuration == null
+            ? ResourcesMode.Mode.BINARY
+            : roboMethod.configuration.get(ResourcesMode.Mode.class);
+    ;
 
     LooperMode.Mode looperMode =
         roboMethod.configuration == null
@@ -260,18 +263,14 @@ public class RobolectricTestRunner extends SandboxTestRunner {
     Sdk sdk = roboMethod.getSdk();
     perfStatsCollector.putMetadata(
         AndroidMetadata.class,
-        new AndroidMetadata(
-            ImmutableMap.of("ro.build.version.sdk", "" + sdk.getApiLevel()),
-            roboMethod.resourcesMode.name()));
+        new AndroidMetadata(ImmutableMap.of("ro.build.version.sdk", "" + sdk.getApiLevel())));
 
     Logger.lifecycle(
         roboMethod.getDeclaringClass().getName()
             + "."
             + roboMethod.getMethod().getName()
             + ": sdk="
-            + sdk.getApiLevel()
-            + "; resources="
-            + roboMethod.resourcesMode);
+            + sdk.getApiLevel());
 
     roboMethod.setStuff(androidSandbox, androidSandbox.getTestEnvironment());
     Class<TestLifecycle> cl = androidSandbox.bootstrappedClass(getTestLifecycleClass());
@@ -279,11 +278,24 @@ public class RobolectricTestRunner extends SandboxTestRunner {
 
     AndroidManifest appManifest = roboMethod.getAppManifest();
 
+    String tmpDirName = getTempDirName(bootstrappedMethod);
     roboMethod
         .getTestEnvironment()
-        .setUpApplicationState(bootstrappedMethod, roboMethod.getConfiguration(), appManifest);
+        .setUpApplicationState(tmpDirName, roboMethod.getConfiguration(), appManifest);
 
     roboMethod.testLifecycle.beforeTest(bootstrappedMethod);
+  }
+
+  /** Returns a filesystem-safe directory path name for the current test. */
+  private String getTempDirName(Method method) {
+    // Cap the size to 120 to avoid unnecessarily long directory names.
+    String directoryName =
+        (method.getDeclaringClass().getSimpleName() + "_" + method.getName())
+            .replaceAll("[^a-zA-Z0-9.-]", "_");
+    if (directoryName.length() > MAX_DATA_DIR_NAME_LENGTH) {
+      directoryName = directoryName.substring(0, MAX_DATA_DIR_NAME_LENGTH);
+    }
+    return directoryName;
   }
 
   @Override
@@ -338,11 +350,7 @@ public class RobolectricTestRunner extends SandboxTestRunner {
       return new DefaultManifestFactory(buildSystemApiProperties);
     }
 
-    if (BuckManifestFactory.isBuck()) {
-      return new BuckManifestFactory();
-    } else {
-      return new MavenManifestFactory();
-    }
+    return new MavenManifestFactory();
   }
 
   protected Properties getBuildSystemApiProperties() {
@@ -511,7 +519,6 @@ public class RobolectricTestRunner extends SandboxTestRunner {
     private final int apiLevel;
     @Nonnull private final AndroidManifest appManifest;
     @Nonnull private final Configuration configuration;
-    @Nonnull private final ResourcesMode resourcesMode;
     @Nonnull private final Sdk sdk;
 
     private final boolean alwaysIncludeVariantMarkersInName;
@@ -527,7 +534,6 @@ public class RobolectricTestRunner extends SandboxTestRunner {
           other.appManifest,
           other.getSdk(),
           other.configuration,
-          other.resourcesMode,
           other.alwaysIncludeVariantMarkersInName);
 
       includeVariantMarkersInTestName = other.includeVariantMarkersInTestName;
@@ -539,14 +545,12 @@ public class RobolectricTestRunner extends SandboxTestRunner {
         @Nonnull AndroidManifest appManifest,
         @Nonnull Sdk sdk,
         @Nonnull Configuration configuration,
-        @Nonnull ResourcesMode resourcesMode,
         boolean alwaysIncludeVariantMarkersInName) {
       super(method);
 
       this.apiLevel = sdk.getApiLevel();
       this.appManifest = appManifest;
       this.configuration = configuration;
-      this.resourcesMode = resourcesMode;
       this.alwaysIncludeVariantMarkersInName = alwaysIncludeVariantMarkersInName;
       this.sdk = sdk;
     }
@@ -595,10 +599,6 @@ public class RobolectricTestRunner extends SandboxTestRunner {
       return false;
     }
 
-    public ResourcesMode getResourcesMode() {
-      return resourcesMode;
-    }
-
     @Override
     public boolean equals(Object o) {
       if (this == o) return true;
@@ -607,14 +607,13 @@ public class RobolectricTestRunner extends SandboxTestRunner {
 
       RobolectricFrameworkMethod that = (RobolectricFrameworkMethod) o;
 
-      return apiLevel == that.apiLevel && resourcesMode == that.resourcesMode;
+      return apiLevel == that.apiLevel;
     }
 
     @Override
     public int hashCode() {
       int result = super.hashCode();
       result = 31 * result + apiLevel;
-      result = 31 * result + resourcesMode.ordinal();
       return result;
     }
 

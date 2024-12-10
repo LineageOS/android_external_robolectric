@@ -1,7 +1,5 @@
 package org.robolectric.shadows;
 
-
-import static android.os.Build.VERSION_CODES.LOLLIPOP;
 import static android.os.Build.VERSION_CODES.N_MR1;
 import static android.os.Build.VERSION_CODES.O;
 import static android.os.Build.VERSION_CODES.O_MR1;
@@ -9,7 +7,6 @@ import static android.os.Build.VERSION_CODES.P;
 import static android.os.Build.VERSION_CODES.Q;
 import static android.os.Build.VERSION_CODES.R;
 import static android.os.Build.VERSION_CODES.S;
-import static org.robolectric.RuntimeEnvironment.getApiLevel;
 import static org.robolectric.Shadows.shadowOf;
 
 import android.annotation.SuppressLint;
@@ -31,6 +28,7 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.HiddenApi;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
+import org.robolectric.annotation.InDevelopment;
 import org.robolectric.annotation.RealObject;
 import org.robolectric.annotation.Resetter;
 import org.robolectric.res.Fs;
@@ -39,6 +37,7 @@ import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.ReflectionHelpers.ClassParameter;
 import org.robolectric.versioning.AndroidVersions.T;
 import org.robolectric.versioning.AndroidVersions.U;
+import org.robolectric.versioning.AndroidVersions.V;
 
 /** Shadow for {@link Typeface}. */
 @Implements(value = Typeface.class, looseSignatures = true, isInAndroidSdk = false)
@@ -55,7 +54,14 @@ public class ShadowLegacyTypeface extends ShadowTypeface {
   }
 
   @Implementation(minSdk = U.SDK_INT)
+  @InDevelopment
   protected void __constructor__(long fontId, String familyName) {
+    description = findById(fontId);
+  }
+
+  @Implementation(minSdk = V.SDK_INT)
+  @InDevelopment
+  protected void __constructor__(long fontId, String familyName, Typeface derivedFrom) {
     description = findById(fontId);
   }
 
@@ -215,13 +221,8 @@ public class ShadowLegacyTypeface extends ShadowTypeface {
   protected static Typeface createUnderlyingTypeface(String familyName, int style) {
     long thisFontId = nextFontId.getAndIncrement();
     FONTS.put(thisFontId, new FontDesc(familyName, style));
-    if (getApiLevel() >= LOLLIPOP) {
-      return ReflectionHelpers.callConstructor(
-          Typeface.class, ClassParameter.from(long.class, thisFontId));
-    } else {
-      return ReflectionHelpers.callConstructor(
-          Typeface.class, ClassParameter.from(int.class, (int) thisFontId));
-    }
+    return ReflectionHelpers.callConstructor(
+        Typeface.class, ClassParameter.from(long.class, thisFontId));
   }
 
   private static synchronized FontDesc findById(long fontId) {
