@@ -218,7 +218,7 @@ java_library {
         "//frameworks/base/tests/InputScreenshotTest:__subpackages__",
         "//frameworks/base/packages/SettingsLib:__subpackages__",
         "//packages/apps/TV/common/tests/robotests:__pkg__",
-        "//packages/apps/Launcher3/tests:__pkg__",
+        "//packages/apps/Trebuchet/tests:__pkg__",
         "//packages/apps/Car/Launcher/libs/appgrid/lib/robotests:__pkg__",
         "//cts/tests:__subpackages__",
     ],
