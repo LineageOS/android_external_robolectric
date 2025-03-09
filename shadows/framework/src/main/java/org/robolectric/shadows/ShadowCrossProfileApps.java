@@ -40,6 +40,7 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
+import org.robolectric.annotation.Resetter;
 import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.ForType;
 
@@ -48,16 +49,26 @@ import org.robolectric.util.reflector.ForType;
 public class ShadowCrossProfileApps {
 
   @RealObject private CrossProfileApps realObject;
-  private final Set<UserHandle> targetUserProfiles = new LinkedHashSet<>();
-  private final List<StartedMainActivity> startedMainActivities = new ArrayList<>();
-  private final List<StartedActivity> startedActivities =
+
+  private static final Set<UserHandle> targetUserProfiles = new LinkedHashSet<>();
+  private static final List<StartedMainActivity> startedMainActivities = new ArrayList<>();
+  private static final List<StartedActivity> startedActivities =
       Collections.synchronizedList(new ArrayList<>());
 
   // Whether the current application has the interact across profile AppOps.
-  private volatile int canInteractAcrossProfileAppOps = AppOpsManager.MODE_ERRORED;
+  private static volatile int canInteractAcrossProfileAppOps = AppOpsManager.MODE_ERRORED;
 
   // Whether the current application has requested the interact across profile permission.
-  private volatile boolean hasRequestedInteractAcrossProfiles = false;
+  private static volatile boolean hasRequestedInteractAcrossProfiles = false;
+
+  @Resetter
+  public static void reset() {
+    targetUserProfiles.clear();
+    startedMainActivities.clear();
+    startedActivities.clear();
+    canInteractAcrossProfileAppOps = AppOpsManager.MODE_ERRORED;
+    hasRequestedInteractAcrossProfiles = false;
+  }
 
   /**
    * Returns a list of {@link UserHandle}s currently accessible. This list is populated from calls

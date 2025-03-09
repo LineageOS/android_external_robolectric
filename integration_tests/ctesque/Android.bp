@@ -8,9 +8,11 @@ android_robolectric_test {
         "src/sharedTest/**/*.java",
         "src/sharedTest/**/*.kt",
     ],
-    // TODO(b/325659920) To be add back once we properly support RNR in Android.
     exclude_srcs: [
-        "src/sharedTest/java/android/database/SQLiteDatabaseTest.java",
+        // TODO:  fix missing a local resource
+        "src/sharedTest/java/android/telephony/PhoneNumberUtilsTest.java",
+        // TODO:  tries to load the android native runtime and dies
+        "src/sharedTest/java/android/view/accessibility/AccessibilityNodeInfoTest.java",
     ],
     static_libs: [
         "androidx.core_core",

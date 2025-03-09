@@ -63,5 +63,9 @@ java_library {
         "auto_value_builder_plugin_1.9",
         "Robolectric_processor_upstream",
     ],
-
+    errorprone: {
+        javacflags: [
+            "-Xep:ImpossibleNullComparison:WARN",
+        ],
+    },
 }

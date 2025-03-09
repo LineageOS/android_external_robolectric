@@ -34,7 +34,7 @@ jobs:
           distribution: 'adopt'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Build
         run: |
@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-versions: [ '21,34', '22,23,33', '24,25,32', '26,27,28', '29,30,31', ]
+        api-versions: [ '21,22,23', '24,25,26', '27,28,29', '30,31,32', '33,34' ]
 
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
           distribution: 'adopt'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Run unit tests
         run: |
@@ -105,7 +105,7 @@ jobs:
           distribution: 'adopt'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Enable KVM group perms
         run: |
@@ -184,8 +184,7 @@ jobs:
           distribution: 'adopt'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Publish
-        run: |
-          ./gradlew publish --stacktrace --no-watch-fs
+        run: ./gradlew publish --stacktrace --no-watch-fs

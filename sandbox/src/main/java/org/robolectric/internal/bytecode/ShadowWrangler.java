@@ -9,7 +9,6 @@ import static org.robolectric.util.reflector.Reflector.reflector;
 
 import com.google.auto.service.AutoService;
 import com.google.errorprone.annotations.Keep;
-import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -18,6 +17,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -30,7 +30,6 @@ import org.robolectric.annotation.ReflectorObject;
 import org.robolectric.sandbox.ShadowMatcher;
 import org.robolectric.util.Function;
 import org.robolectric.util.PerfStatsCollector;
-import org.robolectric.util.Util;
 
 /**
  * ShadowWrangler matches shadowed classes up with corresponding shadows based on a {@link
@@ -71,24 +70,6 @@ public class ShadowWrangler implements ClassHandler {
   }
 
   private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
-
-  // Required to support the equivalent of MethodHandles.privateLookupIn in Java 8. It allows
-  // calling protected constructors using incokespecial.
-  private static final boolean HAS_PRIVATE_LOOKUP_IN = Util.getJavaVersion() >= 9;
-  private static final Constructor<MethodHandles.Lookup> JAVA_8_LOOKUP_CTOR;
-
-  static {
-    if (!HAS_PRIVATE_LOOKUP_IN) {
-      try {
-        JAVA_8_LOOKUP_CTOR = MethodHandles.Lookup.class.getDeclaredConstructor(Class.class);
-        JAVA_8_LOOKUP_CTOR.setAccessible(true);
-      } catch (NoSuchMethodException e) {
-        throw new AssertionError(e);
-      }
-    } else {
-      JAVA_8_LOOKUP_CTOR = null;
-    }
-  }
 
   private static final Class<?>[] NO_ARGS = new Class<?>[0];
   static final Object NO_SHADOW = new Object();
@@ -213,7 +194,7 @@ public class ShadowWrangler implements ClassHandler {
                 // the wrong constructor may be called in situations where constructors with
                 // identical signatures are shadowed in object hierarchies.
                 mh =
-                    privateLookupFor(shadowMethod.getDeclaringClass())
+                    MethodHandles.privateLookupIn(shadowMethod.getDeclaringClass(), LOOKUP)
                         .unreflectSpecial(shadowMethod, shadowMethod.getDeclaringClass());
               } else {
                 mh = LOOKUP.unreflect(shadowMethod);
@@ -229,18 +210,15 @@ public class ShadowWrangler implements ClassHandler {
             });
   }
 
-  private MethodHandles.Lookup privateLookupFor(Class<?> lookupClass)
-      throws IllegalAccessException {
-    if (HAS_PRIVATE_LOOKUP_IN) {
-      return MethodHandles.privateLookupIn(lookupClass, LOOKUP);
-    }
-    try {
-      return JAVA_8_LOOKUP_CTOR.newInstance(lookupClass);
-    } catch (ReflectiveOperationException e) {
-      throw new LinkageError(e.getMessage(), e);
-    }
-  }
-
+  /**
+   * Return a method handle of the shadow class which matches the given function signature of the
+   * shadowed class.
+   *
+   * @param definingClass The shadowed class
+   * @param name The name of the method
+   * @param paramTypes The parameter list of the method
+   * @return A method handle of the corresponding shadow class
+   */
   protected Method pickShadowMethod(Class<?> definingClass, String name, Class<?>[] paramTypes) {
     ShadowInfo shadowInfo = getExactShadowInfo(definingClass);
     if (shadowInfo == null) {
@@ -267,6 +245,8 @@ public class ShadowWrangler implements ClassHandler {
    * Searches for an {@code @Implementation} method on a given shadow class.
    *
    * <p>If the shadow class allows loose signatures, search for them.
+   *
+   * <p>If the shadow class has function using @ClassName matches the requirement, return it
    *
    * <p>If the shadow class doesn't have such a method, but does have a superclass which implements
    * the same class as it, call ourself recursively with the shadow superclass.
@@ -317,8 +297,11 @@ public class ShadowWrangler implements ClassHandler {
         continue;
       }
 
-      if (Arrays.equals(method.getParameterTypes(), paramClasses)
-          && shadowMatcher.matches(method)) {
+      if (!shadowMatcher.matches(method)) {
+        continue;
+      }
+
+      if (Arrays.equals(method.getParameterTypes(), paramClasses)) {
         // Found an exact match, we can exit early.
         foundMethod = method;
         break;
@@ -332,13 +315,13 @@ public class ShadowWrangler implements ClassHandler {
             break;
           }
         }
-        if (allParameterTypesAreObject && shadowMatcher.matches(method)) {
+        if (allParameterTypesAreObject) {
           // Found a looseSignatures match, but continue looking for an exact match.
           foundMethod = method;
         }
       } else {
         // Or maybe support @ClassName.
-        if (parameterClassNameMatch(method, paramClasses) && shadowMatcher.matches(method)) {
+        if (parameterClassNameMatch(method, paramClasses)) {
           // Found a @ClassName match, but continue looking for an exact match.
           foundMethod = method;
         }
@@ -354,6 +337,9 @@ public class ShadowWrangler implements ClassHandler {
         }
         String mappedMethodName = implementation.methodName().trim();
         if (mappedMethodName.isEmpty() || !mappedMethodName.equals(methodName)) {
+          continue;
+        }
+        if (!shadowMatcher.matches(method)) {
           continue;
         }
         if (Arrays.equals(method.getParameterTypes(), paramClasses)
@@ -377,30 +363,24 @@ public class ShadowWrangler implements ClassHandler {
    * matches {@code paramClasses}.
    */
   private boolean parameterClassNameMatch(Method method, Class<?>[] paramClasses) {
-    Class<?>[] parameterTypes = method.getParameterTypes();
-    if (parameterTypes.length != paramClasses.length) {
+    Parameter[] params = method.getParameters();
+    if (params.length != paramClasses.length) {
       return false;
     }
 
-    Annotation[][] annotations = method.getParameterAnnotations();
-    for (int i = 0; i < paramClasses.length; ++i) {
-      if (parameterTypes[i].equals(paramClasses[i])) {
+    for (int i = 0; i < params.length; ++i) {
+      if (params[i].getType().equals(paramClasses[i])) {
         continue;
       }
-      if (!parameterTypes[i].equals(Object.class)) {
+      if (!params[i].getType().equals(Object.class)) {
         return false; // @ClassName only applicable to parameter of Object type
       }
-      boolean matches = false;
-      for (Annotation annotation : annotations[i]) {
-        if (annotation instanceof ClassName) {
-          matches = ((ClassName) annotation).value().equals(paramClasses[i].getName());
-          break;
-        }
-      }
-      if (!matches) {
+      ClassName className = params[i].getAnnotation(ClassName.class);
+      if (className == null || !className.value().equals(paramClasses[i].getName())) {
         return false;
       }
     }
+
     return true;
   }
 

@@ -2,7 +2,6 @@ package org.robolectric.shadows;
 
 import static android.content.Intent.ACTION_SCREEN_OFF;
 import static android.content.Intent.ACTION_SCREEN_ON;
-import static android.os.Build.VERSION_CODES.LOLLIPOP_MR1;
 import static android.os.Build.VERSION_CODES.M;
 import static android.os.Build.VERSION_CODES.N;
 import static android.os.Build.VERSION_CODES.O;
@@ -42,6 +41,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.HiddenApi;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
@@ -49,49 +49,50 @@ import org.robolectric.annotation.RealObject;
 import org.robolectric.annotation.Resetter;
 import org.robolectric.shadow.api.Shadow;
 import org.robolectric.util.reflector.Accessor;
+import org.robolectric.util.reflector.Direct;
 import org.robolectric.util.reflector.ForType;
 
 /** Shadow of PowerManager */
-@Implements(value = PowerManager.class, looseSignatures = true)
+@Implements(value = PowerManager.class)
 public class ShadowPowerManager {
 
   @RealObject private PowerManager realPowerManager;
 
-  private boolean isInteractive = true;
-  private boolean isPowerSaveMode = false;
-  private boolean isDeviceIdleMode = false;
-  private boolean isLightDeviceIdleMode = false;
-  @Nullable private Duration batteryDischargePrediction = null;
-  private boolean isBatteryDischargePredictionPersonalized = false;
+  private static boolean isInteractive = true;
+  private static boolean isPowerSaveMode = false;
+  private static boolean isDeviceIdleMode = false;
+  private static boolean isLightDeviceIdleMode = false;
+  @Nullable private static Duration batteryDischargePrediction = null;
+  private static boolean isBatteryDischargePredictionPersonalized = false;
 
   @PowerManager.LocationPowerSaveMode
-  private int locationMode = PowerManager.LOCATION_MODE_ALL_DISABLED_WHEN_SCREEN_OFF;
+  private static int locationMode = PowerManager.LOCATION_MODE_ALL_DISABLED_WHEN_SCREEN_OFF;
 
-  private final List<String> rebootReasons = new ArrayList<>();
-  private final Map<String, Boolean> ignoringBatteryOptimizations = new HashMap<>();
+  private static final List<String> rebootReasons = new ArrayList<>();
+  private static final Map<String, Boolean> ignoringBatteryOptimizations = new HashMap<>();
 
-  private int thermalStatus = 0;
+  private static int thermalStatus = 0;
   // Intentionally use Object instead of PowerManager.OnThermalStatusChangedListener to avoid
   // ClassLoader exceptions on earlier SDKs that don't have this class.
-  private final Set<Object> thermalListeners = new HashSet<>();
+  private static final Set<Object> thermalListeners = new HashSet<>();
 
-  private final Set<String> ambientDisplaySuppressionTokens =
+  private static final Set<String> ambientDisplaySuppressionTokens =
       Collections.synchronizedSet(new HashSet<>());
-  private volatile boolean isAmbientDisplayAvailable = true;
-  private volatile boolean isRebootingUserspaceSupported = false;
-  private volatile boolean adaptivePowerSaveEnabled = false;
+  private static volatile boolean isAmbientDisplayAvailable = true;
+  private static volatile boolean isRebootingUserspaceSupported = false;
+  private static volatile boolean adaptivePowerSaveEnabled = false;
 
   private static PowerManager.WakeLock latestWakeLock;
 
-  private boolean lowPowerStandbyEnabled = false;
-  private boolean lowPowerStandbySupported = false;
-  private boolean exemptFromLowPowerStandby = false;
-  private final Set<String> allowedFeatures = new HashSet<String>();
+  private static boolean lowPowerStandbyEnabled = false;
+  private static boolean lowPowerStandbySupported = false;
+  private static boolean exemptFromLowPowerStandby = false;
+  private static final Set<String> allowedFeatures = new HashSet<String>();
 
   @Implementation
   protected PowerManager.WakeLock newWakeLock(int flags, String tag) {
-    PowerManager.WakeLock wl = Shadow.newInstanceOf(PowerManager.WakeLock.class);
-    ((ShadowWakeLock) Shadow.extract(wl)).setTag(tag);
+    PowerManager.WakeLock wl =
+        reflector(PowerManagerReflector.class, realPowerManager).newWakeLock(flags, tag);
     latestWakeLock = wl;
     return wl;
   }
@@ -161,6 +162,7 @@ public class ShadowPowerManager {
   /** Sets the value returned by {@link #isDeviceIdleMode()}. */
   public void setIsDeviceIdleMode(boolean isDeviceIdleMode) {
     this.isDeviceIdleMode = isDeviceIdleMode;
+    getContext().sendBroadcast(new Intent(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED));
   }
 
   /**
@@ -218,7 +220,8 @@ public class ShadowPowerManager {
 
   /** This function adds a listener for thermal status change. */
   @Implementation(minSdk = Q)
-  protected void addThermalStatusListener(Object listener) {
+  protected void addThermalStatusListener(
+      @ClassName("android.os.PowerManager$OnThermalStatusChangedListener") Object listener) {
     checkState(
         listener instanceof PowerManager.OnThermalStatusChangedListener,
         "Listener must implement PowerManager.OnThermalStatusChangedListener");
@@ -232,7 +235,8 @@ public class ShadowPowerManager {
 
   /** This function removes a listener for thermal status change. */
   @Implementation(minSdk = Q)
-  protected void removeThermalStatusListener(Object listener) {
+  protected void removeThermalStatusListener(
+      @ClassName("android.os.PowerManager$OnThermalStatusChangedListener") Object listener) {
     checkState(
         listener instanceof PowerManager.OnThermalStatusChangedListener,
         "Listener must implement PowerManager.OnThermalStatusChangedListener");
@@ -257,6 +261,26 @@ public class ShadowPowerManager {
   /** Discards the most recent {@code PowerManager.WakeLock}s */
   @Resetter
   public static void reset() {
+    isInteractive = true;
+    isPowerSaveMode = false;
+    isDeviceIdleMode = false;
+    isLightDeviceIdleMode = false;
+    batteryDischargePrediction = null;
+    isBatteryDischargePredictionPersonalized = false;
+    locationMode = PowerManager.LOCATION_MODE_ALL_DISABLED_WHEN_SCREEN_OFF;
+    rebootReasons.clear();
+    ignoringBatteryOptimizations.clear();
+    thermalStatus = 0;
+    thermalListeners.clear();
+    ambientDisplaySuppressionTokens.clear();
+    isAmbientDisplayAvailable = true;
+    isRebootingUserspaceSupported = false;
+    adaptivePowerSaveEnabled = false;
+    latestWakeLock = null;
+    lowPowerStandbyEnabled = false;
+    lowPowerStandbySupported = false;
+    exemptFromLowPowerStandby = false;
+    allowedFeatures.clear();
     clearWakeLocks();
   }
 
@@ -438,10 +462,11 @@ public class ShadowPowerManager {
 
   @Implements(PowerManager.WakeLock.class)
   public static class ShadowWakeLock {
+    @RealObject private PowerManager.WakeLock realWakeLock;
+
     private boolean refCounted = true;
     private WorkSource workSource = null;
     private int timesHeld = 0;
-    private String tag = null;
     private List<Optional<Long>> timeoutTimestampList = new ArrayList<>();
 
     private void acquireInternal(Optional<Long> timeoutOptional) {
@@ -546,18 +571,18 @@ public class ShadowPowerManager {
     @HiddenApi
     @Implementation(minSdk = O)
     public String getTag() {
-      return tag;
+      return reflector(WakeLockReflector.class, realWakeLock).getTag();
     }
 
-    /** Sets the tag. */
-    @Implementation(minSdk = LOLLIPOP_MR1)
-    protected void setTag(String tag) {
-      this.tag = tag;
+    @ForType(PowerManager.WakeLock.class)
+    private interface WakeLockReflector {
+      @Accessor("mTag")
+      String getTag();
     }
   }
 
   private Context getContext() {
-    return reflector(ReflectorPowerManager.class, realPowerManager).getContext();
+    return reflector(PowerManagerReflector.class, realPowerManager).getContext();
   }
 
   @Implementation(minSdk = TIRAMISU)
@@ -607,12 +632,12 @@ public class ShadowPowerManager {
   }
 
   @Implementation(minSdk = UPSIDE_DOWN_CAKE)
-  protected Object /* LowPowerStandbyPortsLock */ newLowPowerStandbyPortsLock(
-      List<LowPowerStandbyPortDescription> ports) {
+  protected @ClassName("android.os.PowerManager$LowPowerStandbyPortsLock") Object
+      newLowPowerStandbyPortsLock(List<LowPowerStandbyPortDescription> ports) {
     PowerManager.LowPowerStandbyPortsLock lock =
         Shadow.newInstanceOf(PowerManager.LowPowerStandbyPortsLock.class);
     ((ShadowLowPowerStandbyPortsLock) Shadow.extract(lock)).setPorts(ports);
-    return (Object) lock;
+    return lock;
   }
 
   /** Shadow of {@link LowPowerStandbyPortsLock} to allow testing state. */
@@ -655,9 +680,12 @@ public class ShadowPowerManager {
 
   /** Reflector interface for {@link PowerManager}'s internals. */
   @ForType(PowerManager.class)
-  private interface ReflectorPowerManager {
+  private interface PowerManagerReflector {
 
     @Accessor("mContext")
     Context getContext();
+
+    @Direct
+    WakeLock newWakeLock(int flags, String tag);
   }
 }

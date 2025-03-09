@@ -7,6 +7,7 @@ import static android.os.Build.VERSION_CODES.O;
 import static android.os.Build.VERSION_CODES.P;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.fail;
 import static org.robolectric.Shadows.shadowOf;
 import static org.robolectric.shadows.ShadowLooper.shadowMainLooper;
@@ -143,6 +144,24 @@ public class ShadowMediaPlayerTest {
 
     MediaPlayer mp = MediaPlayer.create(context, 123, new AudioAttributes.Builder().build(), 42);
     assertThat(mp.getAudioSessionId()).isEqualTo(42);
+  }
+
+  @Test
+  public void create_withResourceIdAudioAttributesAndAudioSessionId_shouldSetAudioAttributes() {
+    Application context = ApplicationProvider.getApplicationContext();
+    ShadowMediaPlayer.addMediaInfo(
+        DataSource.toDataSource("android.resource://" + context.getPackageName() + "/123"),
+        new ShadowMediaPlayer.MediaInfo(100, 10));
+
+    AudioAttributes audioAttributes =
+        new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build();
+    MediaPlayer mp = MediaPlayer.create(context, 123, audioAttributes, 42);
+
+    ShadowMediaPlayer shadow = shadowOf(mp);
+    assertThat(shadow.getAudioAttributes()).isEqualTo(audioAttributes);
   }
 
   @Test
@@ -677,6 +696,23 @@ public class ShadowMediaPlayerTest {
   }
 
   @Test
+  public void testSetAudioAttributes() {
+    AudioAttributes audioAttributes =
+        new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build();
+    mediaPlayer.setAudioAttributes(audioAttributes);
+
+    assertThat(shadowMediaPlayer.getAudioAttributes()).isEqualTo(audioAttributes);
+  }
+
+  @Test
+  public void testSetAudioAttributes_nullAudioAttributes_throwsIllegalArgumentException() {
+    assertThrows(IllegalArgumentException.class, () -> mediaPlayer.setAudioAttributes(null));
+  }
+
+  @Test
   public void testCurrentPosition() {
     int[] positions = {0, 1, 2, 1024};
     for (int position : positions) {
@@ -767,7 +803,7 @@ public class ShadowMediaPlayerTest {
     // to play it safe but reasonable, by looking at whether the PREPARED or
     // INITIALIZED are allowed (ie, the two states that PREPARING
     // sites between). Only if both these states are allowed is
-    // PREPARING allowed too, if either PREPARED or INITALIZED is
+    // PREPARING allowed too, if either PREPARED or INITIALIZED is
     // disallowed then so is PREPARING.
     if (invalid.contains(PREPARED) || invalid.contains(INITIALIZED)) {
       invalid.add(PREPARING);
@@ -934,7 +970,7 @@ public class ShadowMediaPlayerTest {
       mediaPlayer.seekTo(-1);
       shadowMediaPlayer.invokeSeekCompleteListener();
 
-      assertWithMessage("Current postion while " + state)
+      assertWithMessage("Current position while " + state)
           .that(mediaPlayer.getCurrentPosition())
           .isEqualTo(0);
       assertWithMessage("Final state " + state).that(shadowMediaPlayer.getState()).isEqualTo(state);
@@ -952,7 +988,7 @@ public class ShadowMediaPlayerTest {
       mediaPlayer.seekTo(1001);
       shadowMediaPlayer.invokeSeekCompleteListener();
 
-      assertWithMessage("Current postion while " + state)
+      assertWithMessage("Current position while " + state)
           .that(mediaPlayer.getCurrentPosition())
           .isEqualTo(1000);
       assertWithMessage("Final state " + state).that(shadowMediaPlayer.getState()).isEqualTo(state);

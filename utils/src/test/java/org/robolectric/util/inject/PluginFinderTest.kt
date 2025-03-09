@@ -70,11 +70,11 @@ class PluginFinderTest {
 
   @Test
   @Throws(Exception::class)
-  fun findPlugins_whenAnnotatedSupercedes_shouldExcludeSuperceded() {
+  fun findPlugins_whenAnnotatedSupersedes_shouldExcludeSuperseded() {
     pluginClasses.addAll(
       listOf(
         ImplMinus1::class.java,
-        ImplZeroXSupercedesA::class.java,
+        ImplZeroXSupersedesA::class.java,
         ImplZeroA::class.java,
         ImplOne::class.java,
         ImplZeroB::class.java,
@@ -85,7 +85,7 @@ class PluginFinderTest {
       .containsExactly(
         ImplOne::class.java,
         ImplZeroB::class.java,
-        ImplZeroXSupercedesA::class.java,
+        ImplZeroXSupersedesA::class.java,
         ImplMinus1::class.java,
       )
       .inOrder()
@@ -100,7 +100,7 @@ class PluginFinderTest {
 
   @Priority(1) private class ImplOne : Iface
 
-  @Supercedes(ImplZeroA::class) private class ImplZeroXSupercedesA : Iface
+  @Supersedes(ImplZeroA::class) private class ImplZeroXSupersedesA : Iface
 
   private interface Iface
 }

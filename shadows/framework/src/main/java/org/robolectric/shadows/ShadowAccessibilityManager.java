@@ -8,16 +8,20 @@ import static org.robolectric.util.reflector.Reflector.reflector;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
 import android.content.pm.ServiceInfo;
+import android.graphics.Matrix;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.util.ArrayMap;
 import android.util.Log;
+import android.view.MagnificationSpec;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityManager.AccessibilityStateChangeListener;
 import android.view.accessibility.AccessibilityManager.TouchExplorationStateChangeListener;
 import android.view.accessibility.IAccessibilityManager;
+import android.view.accessibility.IAccessibilityManager.WindowTransformationSpec;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,6 +29,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import javax.annotation.Nullable;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.HiddenApi;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
@@ -36,6 +41,7 @@ import org.robolectric.util.ReflectionHelpers.ClassParameter;
 import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.Direct;
 import org.robolectric.util.reflector.ForType;
+import org.robolectric.versioning.AndroidVersions.U;
 
 @Implements(AccessibilityManager.class)
 public class ShadowAccessibilityManager {
@@ -43,14 +49,15 @@ public class ShadowAccessibilityManager {
   private static final Object sInstanceSync = new Object();
 
   @RealObject AccessibilityManager realAccessibilityManager;
-  private final List<AccessibilityEvent> sentAccessibilityEvents = new ArrayList<>();
-  private boolean enabled;
-  private List<AccessibilityServiceInfo> installedAccessibilityServiceList = new ArrayList<>();
-  private List<AccessibilityServiceInfo> enabledAccessibilityServiceList = new ArrayList<>();
-  private List<ServiceInfo> accessibilityServiceList = new ArrayList<>();
-  private final HashMap<AccessibilityStateChangeListener, Handler>
+  private static final List<AccessibilityEvent> sentAccessibilityEvents = new ArrayList<>();
+  private static boolean enabled;
+  private static List<AccessibilityServiceInfo> installedAccessibilityServiceList =
+      new ArrayList<>();
+  private static List<AccessibilityServiceInfo> enabledAccessibilityServiceList = new ArrayList<>();
+  private static List<ServiceInfo> accessibilityServiceList = new ArrayList<>();
+  private static final HashMap<AccessibilityStateChangeListener, Handler>
       onAccessibilityStateChangeListeners = new HashMap<>();
-  private boolean touchExplorationEnabled;
+  private static boolean touchExplorationEnabled;
 
   private static boolean isAccessibilityButtonSupported = true;
 
@@ -59,6 +66,13 @@ public class ShadowAccessibilityManager {
     synchronized (sInstanceSync) {
       sInstance = null;
     }
+    sentAccessibilityEvents.clear();
+    enabled = false;
+    installedAccessibilityServiceList.clear();
+    enabledAccessibilityServiceList.clear();
+    accessibilityServiceList.clear();
+    onAccessibilityStateChangeListeners.clear();
+    touchExplorationEnabled = false;
     isAccessibilityButtonSupported = true;
   }
 
@@ -124,6 +138,7 @@ public class ShadowAccessibilityManager {
   }
 
   public void setAccessibilityServiceList(List<ServiceInfo> accessibilityServiceList) {
+    Preconditions.checkNotNull(accessibilityServiceList);
     this.accessibilityServiceList = new ArrayList<>(accessibilityServiceList);
   }
 
@@ -131,19 +146,13 @@ public class ShadowAccessibilityManager {
   @Implementation
   protected List<AccessibilityServiceInfo> getEnabledAccessibilityServiceList(
       int feedbackTypeFlags) {
-    // TODO(hoisie): prohibit null values for enabledAccessibilityServiceList
-    if (enabledAccessibilityServiceList == null) {
-      return null;
-    }
     return Collections.unmodifiableList(enabledAccessibilityServiceList);
   }
 
   public void setEnabledAccessibilityServiceList(
       List<AccessibilityServiceInfo> enabledAccessibilityServiceList) {
-    this.enabledAccessibilityServiceList =
-        enabledAccessibilityServiceList == null
-            ? null
-            : new ArrayList<>(enabledAccessibilityServiceList);
+    Preconditions.checkNotNull(enabledAccessibilityServiceList);
+    this.enabledAccessibilityServiceList = new ArrayList<>(enabledAccessibilityServiceList);
   }
 
   @Implementation
@@ -153,6 +162,7 @@ public class ShadowAccessibilityManager {
 
   public void setInstalledAccessibilityServiceList(
       List<AccessibilityServiceInfo> installedAccessibilityServiceList) {
+    Preconditions.checkNotNull(installedAccessibilityServiceList);
     this.installedAccessibilityServiceList = new ArrayList<>(installedAccessibilityServiceList);
   }
 
@@ -223,6 +233,23 @@ public class ShadowAccessibilityManager {
   protected void performAccessibilityShortcut() {
     setEnabled(true);
     setTouchExplorationEnabled(true);
+  }
+
+  /**
+   * This shadow method is required because {@link
+   * android.view.accessibility.DirectAccessibilityConnection} calls it to determine if any
+   * transformations have occurred on this window.
+   */
+  @Implementation(minSdk = U.SDK_INT)
+  protected @ClassName("android.view.accessibility.IAccessibilityManager.WindowTransformationSpec")
+  Object getWindowTransformationSpec(int windowId) {
+    // Return a value that represents no transformation.
+    WindowTransformationSpec spec = new WindowTransformationSpec();
+    spec.magnificationSpec = new MagnificationSpec();
+    float[] matrix = new float[9];
+    Matrix.IDENTITY_MATRIX.getValues(matrix);
+    spec.transformationMatrix = matrix;
+    return spec;
   }
 
   /**

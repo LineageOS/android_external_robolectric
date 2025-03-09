@@ -18,6 +18,7 @@ import android.os.Bundle;
 import java.util.Map;
 import javax.annotation.concurrent.GuardedBy;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
@@ -28,9 +29,10 @@ import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.Direct;
 import org.robolectric.util.reflector.ForType;
 import org.robolectric.util.reflector.Static;
+import org.robolectric.versioning.AndroidVersions.V;
 
 /** Shadow implementation of {@link NfcAdapter}. */
-@Implements(value = NfcAdapter.class, looseSignatures = true)
+@Implements(value = NfcAdapter.class)
 public class ShadowNfcAdapter {
   @RealObject NfcAdapter nfcAdapter;
 
@@ -78,6 +80,46 @@ public class ShadowNfcAdapter {
 
   @GuardedBy("this")
   private NfcAntennaInfo nfcAntennaInfo;
+
+  @GuardedBy("this")
+  private boolean isObserveModeSupported = false;
+
+  @GuardedBy("this")
+  private boolean isObserverModeEnabled = false;
+
+  @Implementation(minSdk = V.SDK_INT)
+  protected boolean setObserveModeEnabled(boolean enabled) {
+    synchronized (this) {
+      if (isObserveModeSupported) {
+        isObserverModeEnabled = enabled;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @Implementation(minSdk = V.SDK_INT)
+  protected boolean isObserveModeEnabled() {
+    synchronized (this) {
+      return isObserverModeEnabled;
+    }
+  }
+
+  @Implementation(minSdk = V.SDK_INT)
+  protected boolean isObserveModeSupported() {
+    synchronized (this) {
+      return isObserveModeSupported;
+    }
+  }
+
+  /**
+   * Sets the value returned by {@link #isObserveModeSupported()}.
+   *
+   * @param supported the value to return from {@link #isObserveModeSupported()}
+   */
+  public synchronized void setObserveModeSupported(boolean supported) {
+    isObserveModeSupported = supported;
+  }
 
   @Implementation
   protected static NfcAdapter getDefaultAdapter(Context context) {
@@ -283,7 +325,7 @@ public class ShadowNfcAdapter {
 
   // TODO: use NfcAntennaInfo when minimum supported compile SDK is >= android U
   @Implementation(minSdk = UPSIDE_DOWN_CAKE)
-  protected Object /* NfcAntennaInfo */ getNfcAntennaInfo() {
+  protected @ClassName("android.nfc.NfcAntennaInfo") Object getNfcAntennaInfo() {
     synchronized (this) {
       return nfcAntennaInfo;
     }

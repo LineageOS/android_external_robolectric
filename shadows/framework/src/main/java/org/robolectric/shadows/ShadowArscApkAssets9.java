@@ -14,6 +14,7 @@ import java.io.FileDescriptor;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
@@ -23,6 +24,7 @@ import org.robolectric.res.android.CppApkAssets;
 import org.robolectric.res.android.Registries;
 import org.robolectric.res.android.ResXMLTree;
 import org.robolectric.shadows.ShadowApkAssets.Picker;
+import org.robolectric.util.PerfStatsCollector;
 import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.Direct;
@@ -37,8 +39,7 @@ import org.robolectric.util.reflector.Static;
     value = ApkAssets.class,
     minSdk = P,
     shadowPicker = Picker.class,
-    isInAndroidSdk = false,
-    looseSignatures = true)
+    isInAndroidSdk = false)
 public class ShadowArscApkAssets9 extends ShadowApkAssets {
   // #define ATRACE_TAG ATRACE_TAG_RESOURCES
   //
@@ -122,39 +123,48 @@ public class ShadowArscApkAssets9 extends ShadowApkAssets {
       return cachedApkAssetsPtr;
     }
 
-    ATRACE_NAME(String.format("LoadApkAssets(%s)", path));
+    return PerfStatsCollector.getInstance()
+        .measure(
+            "load binary " + (system ? "framework" : "app") + " resources",
+            () -> {
+              ATRACE_NAME(String.format("LoadApkAssets(%s)", path));
 
-    CppApkAssets apk_assets;
-    try {
-      if (overlay) {
-        apk_assets = CppApkAssets.LoadOverlay(path, system);
-      } else if (forceSharedLib) {
-        apk_assets = CppApkAssets.LoadAsSharedLibrary(path, system);
-      } else {
-        apk_assets = CppApkAssets.Load(path, system);
-      }
-    } catch (OutOfMemoryError e) {
-      OutOfMemoryError outOfMemoryError = new OutOfMemoryError("Failed to load " + path);
-      outOfMemoryError.initCause(e);
-      throw outOfMemoryError;
-    }
+              CppApkAssets apk_assets;
+              try {
+                if (overlay) {
+                  apk_assets = CppApkAssets.LoadOverlay(path, system);
+                } else if (forceSharedLib) {
+                  apk_assets = CppApkAssets.LoadAsSharedLibrary(path, system);
+                } else {
+                  apk_assets = CppApkAssets.Load(path, system);
+                }
+              } catch (OutOfMemoryError e) {
+                OutOfMemoryError outOfMemoryError = new OutOfMemoryError("Failed to load " + path);
+                outOfMemoryError.initCause(e);
+                throw outOfMemoryError;
+              }
 
-    if (apk_assets == null) {
-      String error_msg = String.format("Failed to load asset path %s", path);
-      throw new IOException(error_msg);
-    }
-    long ptr = Registries.NATIVE_APK_ASSETS_REGISTRY.register(apk_assets);
-    ApkAssetsCache.put(path, system, RuntimeEnvironment.getApiLevel(), ptr);
-    return ptr;
+              if (apk_assets == null) {
+                String error_msg = String.format("Failed to load asset path %s", path);
+                throw new IOException(error_msg);
+              }
+              long ptr = Registries.NATIVE_APK_ASSETS_REGISTRY.register(apk_assets);
+              ApkAssetsCache.put(path, system, RuntimeEnvironment.getApiLevel(), ptr);
+              return ptr;
+            });
   }
 
   @Implementation(minSdk = R)
-  protected static Object nativeLoad(
-      Object format, Object javaPath, Object flags, Object assetsProvider) throws IOException {
-    boolean system = ((int) flags & PROPERTY_SYSTEM) == PROPERTY_SYSTEM;
-    boolean overlay = ((int) flags & PROPERTY_OVERLAY) == PROPERTY_OVERLAY;
-    boolean forceSharedLib = ((int) flags & PROPERTY_DYNAMIC) == PROPERTY_DYNAMIC;
-    return nativeLoad((String) javaPath, system, forceSharedLib, overlay);
+  protected static long nativeLoad(
+      int format,
+      String javaPath,
+      int flags,
+      @ClassName("android.content.res.loader.AssetsProvider") Object assetsProvider)
+      throws IOException {
+    boolean system = (flags & PROPERTY_SYSTEM) == PROPERTY_SYSTEM;
+    boolean overlay = (flags & PROPERTY_OVERLAY) == PROPERTY_OVERLAY;
+    boolean forceSharedLib = (flags & PROPERTY_DYNAMIC) == PROPERTY_DYNAMIC;
+    return nativeLoad(javaPath, system, forceSharedLib, overlay);
   }
 
   // static jlong NativeLoadFromFd(JNIEnv* env, jclass /*clazz*/, jobject file_descriptor,
@@ -202,12 +212,12 @@ public class ShadowArscApkAssets9 extends ShadowApkAssets {
   //                             jobject file_descriptor, jstring friendly_name,
   //                             const jint property_flags, jobject assets_provider)
   @Implementation(minSdk = R)
-  protected static Object nativeLoadFd(
-      Object format,
-      Object fileDescriptor,
-      Object friendlyName,
-      Object propertyFlags,
-      Object assetsProvider)
+  protected static long nativeLoadFd(
+      int format,
+      FileDescriptor fileDescriptor,
+      String friendlyName,
+      int propertyFlags,
+      @ClassName("android.content.res.loader.AssetsProvider") Object assetsProvider)
       throws IOException {
     CppApkAssets apkAssets = CppApkAssets.loadArscFromFd((FileDescriptor) fileDescriptor);
     if (apkAssets == null) {

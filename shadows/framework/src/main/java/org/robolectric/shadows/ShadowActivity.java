@@ -61,6 +61,7 @@ import java.util.function.Consumer;
 import javax.annotation.Nullable;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.android.controller.ActivityController;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.HiddenApi;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
@@ -79,7 +80,7 @@ import org.robolectric.util.reflector.WithType;
 import org.robolectric.versioning.AndroidVersions.V;
 
 @SuppressWarnings("NewApi")
-@Implements(value = Activity.class, looseSignatures = true)
+@Implements(value = Activity.class)
 public class ShadowActivity extends ShadowContextThemeWrapper {
 
   @RealObject protected Activity realActivity;
@@ -113,6 +114,7 @@ public class ShadowActivity extends ShadowContextThemeWrapper {
   private Object splashScreen = null;
   private boolean showWhenLocked = false;
   private boolean turnScreenOn = false;
+  private boolean isTaskMovedToBack = false;
 
   public void setApplication(Application application) {
     reflector(_Activity_.class, realActivity).setApplication(application);
@@ -423,7 +425,7 @@ public class ShadowActivity extends ShadowContextThemeWrapper {
    * @return fake SplashScreen
    */
   @Implementation(minSdk = S)
-  protected synchronized Object getSplashScreen() {
+  protected synchronized @ClassName("android.window.SplashScreen") Object getSplashScreen() {
     if (splashScreen == null) {
       splashScreen = new RoboSplashScreen();
     }
@@ -918,8 +920,24 @@ public class ShadowActivity extends ShadowContextThemeWrapper {
 
   @Implementation
   protected boolean moveTaskToBack(boolean nonRoot) {
+    // If task has already moved to back, return true.
+    if (isTaskMovedToBack) {
+      return true;
+    }
+    // If nonRoot is false then #moveTaskToBack only works when activity is the root of the task.
+    if (!nonRoot && !mIsTaskRoot) {
+      return false;
+    }
+    isTaskMovedToBack = true;
     isInPictureInPictureMode = false;
     return true;
+  }
+
+  /**
+   * @return whether the task containing this activity is moved to the back of the activity stack.
+   */
+  public boolean isTaskMovedToBack() {
+    return isTaskMovedToBack;
   }
 
   /**

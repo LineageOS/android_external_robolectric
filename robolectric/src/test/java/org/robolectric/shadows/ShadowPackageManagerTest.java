@@ -119,6 +119,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import org.junit.After;
 import org.junit.Assert;
@@ -1895,6 +1896,22 @@ public class ShadowPackageManagerTest {
   }
 
   @Test
+  @Config(minSdk = TIRAMISU)
+  public void queryIntentServices_Match_withResolveInfoFlags() {
+    Intent i = new Intent(Intent.ACTION_MAIN, null);
+
+    ResolveInfo info = new ResolveInfo();
+    info.serviceInfo = new ServiceInfo();
+    info.nonLocalizedLabel = TEST_PACKAGE_LABEL;
+
+    shadowOf(packageManager).addResolveInfoForIntent(i, info);
+
+    List<ResolveInfo> services = packageManager.queryIntentServices(i, ResolveInfoFlags.of(0));
+    assertThat(services).hasSize(1);
+    assertThat(services.get(0).nonLocalizedLabel.toString()).isEqualTo(TEST_PACKAGE_LABEL);
+  }
+
+  @Test
   public void queryIntentServices_fromManifest() {
     Intent i = new Intent("org.robolectric.ACTION_DIFFERENT_PACKAGE");
     i.addCategory(Intent.CATEGORY_LAUNCHER);
@@ -3015,7 +3032,7 @@ public class ShadowPackageManagerTest {
   public void getResourcesForApplication_ApkNotPresent() {
     ApplicationInfo applicationInfo =
         ApplicationInfoBuilder.newBuilder().setPackageName("com.not.present").build();
-    applicationInfo.sourceDir = applicationInfo.publicSourceDir = "/some/nonexistant/path";
+    applicationInfo.sourceDir = applicationInfo.publicSourceDir = "/some/nonexistent/path";
 
     try {
       packageManager.getResourcesForApplication(applicationInfo);
@@ -3135,7 +3152,7 @@ public class ShadowPackageManagerTest {
   @Config(minSdk = N, maxSdk = N_MR1) // Functionality removed in O
   public void whenPackageNotPresent_getPackageSizeInfo_callsBackWithFailure() throws Exception {
     IPackageStatsObserver packageStatsObserver = mock(IPackageStatsObserver.class);
-    packageManager.getPackageSizeInfo("nonexistant.package", packageStatsObserver);
+    packageManager.getPackageSizeInfo("nonexistent.package", packageStatsObserver);
     shadowMainLooper().idle();
 
     verify(packageStatsObserver).onGetStatsCompleted(packageStatsCaptor.capture(), eq(false));
@@ -3148,7 +3165,7 @@ public class ShadowPackageManagerTest {
       throws Exception {
     shadowMainLooper().pause();
     IPackageStatsObserver packageStatsObserver = mock(IPackageStatsObserver.class);
-    packageManager.getPackageSizeInfo("nonexistant.package", packageStatsObserver);
+    packageManager.getPackageSizeInfo("nonexistent.package", packageStatsObserver);
 
     verifyNoMoreInteractions(packageStatsObserver);
 
@@ -4688,6 +4705,38 @@ public class ShadowPackageManagerTest {
         .asList()
         .containsExactly(preferredOrder, priority, defaultResolveInfo)
         .inOrder();
+  }
+
+  @Test
+  public void reQueryOverriddenIntents_shouldReturnsDifferentInstancesOfSameParcelables() {
+    Intent intent = new Intent(Intent.ACTION_VIEW);
+    ResolveInfo resolveInfo = new ResolveInfo();
+    resolveInfo.activityInfo = new ActivityInfo();
+    resolveInfo.activityInfo.packageName = "test.package";
+    resolveInfo.activityInfo.name = "test.activity";
+    shadowOf(packageManager).addResolveInfoForIntent(intent, resolveInfo);
+
+    List<ResolveInfo> resolveInfoList1 = packageManager.queryIntentActivities(intent, 0);
+    List<ResolveInfo> resolveInfoList2 = packageManager.queryIntentActivities(intent, 0);
+
+    assertThat(resolveInfoList1).hasSize(1);
+    assertThat(resolveInfoList2).hasSize(1);
+    assertThat(resolveInfoList1).containsNoneIn(resolveInfoList2);
+
+    Iterator<ResolveInfo> iterator1 = resolveInfoList1.iterator();
+    Iterator<ResolveInfo> iterator2 = resolveInfoList2.iterator();
+    while (iterator1.hasNext() && iterator2.hasNext()) {
+      ResolveInfo parcellable1 = iterator1.next();
+      ResolveInfo parcellable2 = iterator2.next();
+      ActivityInfo activityInfo1 = parcellable1.activityInfo;
+      ActivityInfo activityInfo2 = parcellable2.activityInfo;
+
+      assertThat(activityInfo1.packageName).isEqualTo("test.package");
+      assertThat(activityInfo1.name).isEqualTo("test.activity");
+
+      assertThat(activityInfo1.packageName).isEqualTo(activityInfo2.packageName);
+      assertThat(activityInfo1.name).isEqualTo(activityInfo2.name);
+    }
   }
 
   private static PackageInfo createPackageInfoWithPackageName(String packageName) {

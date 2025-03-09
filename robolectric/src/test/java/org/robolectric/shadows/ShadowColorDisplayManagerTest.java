@@ -4,18 +4,23 @@ import static android.os.Build.VERSION_CODES.Q;
 import static com.google.common.truth.Truth.assertThat;
 import static org.robolectric.shadow.api.Shadow.extract;
 
+import android.app.Activity;
 import android.hardware.display.ColorDisplayManager;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import java.util.Optional;
 import org.junit.Before;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.junit.runners.MethodSorters;
+import org.robolectric.Robolectric;
 import org.robolectric.annotation.Config;
 
 /** Tests for ShadowColorDisplayManager. */
 @RunWith(AndroidJUnit4.class)
 @Config(minSdk = Q)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING) // getAppSaturationLevel_afterReset* depends on order
 public class ShadowColorDisplayManagerTest {
 
   private static final String PACKAGE_NAME = "test_package_name";
@@ -134,7 +139,49 @@ public class ShadowColorDisplayManagerTest {
     assertThat(getShadowColorDisplayManager().getTransformCapabilities()).isEqualTo(0x0);
   }
 
+  @Test
+  public void getAppSaturationLevel_afterReset_shouldBeDefault1() {
+    instance.get().setAppSaturationLevel(PACKAGE_NAME, 50);
+    assertThat(getShadowColorDisplayManager().getAppSaturationLevel(PACKAGE_NAME)).isEqualTo(50);
+  }
+
+  @Test
+  public void getAppSaturationLevel_afterReset_shouldBeDefault2() {
+    // A reset should have occurred
+    assertThat(getShadowColorDisplayManager().getAppSaturationLevel(PACKAGE_NAME)).isEqualTo(100);
+  }
+
   private ShadowColorDisplayManager getShadowColorDisplayManager() {
-    return (ShadowColorDisplayManager) extract(instance.get());
+    return extract(instance.get());
+  }
+
+  @Test
+  public void colorDisplayManager_activityContextEnabled_differentInstancesRetrieveSettings() {
+    String originalProperty = System.getProperty("robolectric.createActivityContexts", "");
+    System.setProperty("robolectric.createActivityContexts", "true");
+    Activity activity = null;
+    try {
+      ColorDisplayManager appColorDisplayManager =
+          ApplicationProvider.getApplicationContext().getSystemService(ColorDisplayManager.class);
+      activity = Robolectric.setupActivity(Activity.class);
+      ColorDisplayManager activityColorDisplayManager =
+          activity.getSystemService(ColorDisplayManager.class);
+
+      assertThat(appColorDisplayManager).isNotSameInstanceAs(activityColorDisplayManager);
+
+      boolean appNightDisplayActivated =
+          ((ShadowColorDisplayManager) extract(appColorDisplayManager)).isNightDisplayActivated();
+      boolean activityNightDisplayActivated =
+          ((ShadowColorDisplayManager) extract(activityColorDisplayManager))
+              .isNightDisplayActivated();
+
+      assertThat(activityNightDisplayActivated).isEqualTo(appNightDisplayActivated);
+
+    } finally {
+      if (activity != null) {
+        activity.finish();
+      }
+      System.setProperty("robolectric.createActivityContexts", originalProperty);
+    }
   }
 }

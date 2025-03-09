@@ -56,6 +56,7 @@ import org.mockito.ArgumentCaptor;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadow.api.Shadow;
+import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.versioning.AndroidVersions.U;
 
 @RunWith(AndroidJUnit4.class)
@@ -929,7 +930,8 @@ public class ShadowWifiManagerTest {
                 List.of(WifiSsid.fromBytes(new byte[] {3, 2, 5})),
                 /* frequencies= */ null,
                 /* executor= */ null,
-                new TestPnoScanResultsCallback()));
+                ReflectionHelpers.createDelegatingProxy(
+                    PnoScanResultsCallback.class, new TestPnoScanResultsCallbackDelegate())));
   }
 
   @Test
@@ -942,7 +944,8 @@ public class ShadowWifiManagerTest {
                 /* ssids= */ null,
                 /* frequencies= */ null,
                 Executors.newSingleThreadExecutor(),
-                new TestPnoScanResultsCallback()));
+                ReflectionHelpers.createDelegatingProxy(
+                    PnoScanResultsCallback.class, new TestPnoScanResultsCallbackDelegate())));
   }
 
   @Test
@@ -955,7 +958,8 @@ public class ShadowWifiManagerTest {
                 /* ssids= */ List.of(),
                 /* frequencies= */ null,
                 Executors.newSingleThreadExecutor(),
-                new TestPnoScanResultsCallback()));
+                ReflectionHelpers.createDelegatingProxy(
+                    PnoScanResultsCallback.class, new TestPnoScanResultsCallbackDelegate())));
   }
 
   @Test
@@ -971,7 +975,8 @@ public class ShadowWifiManagerTest {
                     WifiSsid.fromBytes(new byte[] {90, 81, 72, 63, 54})),
                 /* frequencies= */ null,
                 Executors.newSingleThreadExecutor(),
-                new TestPnoScanResultsCallback()));
+                ReflectionHelpers.createDelegatingProxy(
+                    PnoScanResultsCallback.class, new TestPnoScanResultsCallbackDelegate())));
   }
 
   @Test
@@ -986,13 +991,16 @@ public class ShadowWifiManagerTest {
                     WifiSsid.fromBytes(new byte[] {9, 8, 7, 6})),
                 new int[] {5160, 5180, 5200, 5220, 5240, 5260, 5280, 5300, 5320, 5340, 5360},
                 Executors.newSingleThreadExecutor(),
-                new TestPnoScanResultsCallback()));
+                ReflectionHelpers.createDelegatingProxy(
+                    PnoScanResultsCallback.class, new TestPnoScanResultsCallbackDelegate())));
   }
 
   @Test
   @Config(minSdk = TIRAMISU)
   public void setExternalPnoScanRequest_validRequest_successCallbackInvoked() throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
 
     wifiManager.setExternalPnoScanRequest(
         List.of(WifiSsid.fromBytes(new byte[] {1, 2, 3})),
@@ -1000,7 +1008,7 @@ public class ShadowWifiManagerTest {
         Executors.newSingleThreadExecutor(),
         callback);
 
-    assertThat(callback.successfulRegistrations.take()).isNotNull();
+    assertThat(delegate.successfulRegistrations.take()).isNotNull();
   }
 
   @Test
@@ -1008,7 +1016,9 @@ public class ShadowWifiManagerTest {
   public void
       setExternalPnoScanRequest_outstandingRequest_failureCallbackInvokedWithAlreadyRegisteredStatus()
           throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
 
     wifiManager.setExternalPnoScanRequest(
         List.of(WifiSsid.fromBytes(new byte[] {1, 2, 3})),
@@ -1022,7 +1032,7 @@ public class ShadowWifiManagerTest {
         Executors.newSingleThreadExecutor(),
         callback);
 
-    assertThat(callback.failedRegistrations.take())
+    assertThat(delegate.failedRegistrations.take())
         .isEqualTo(PnoScanResultsCallback.REGISTER_PNO_CALLBACK_ALREADY_REGISTERED);
   }
 
@@ -1030,7 +1040,9 @@ public class ShadowWifiManagerTest {
   @Config(minSdk = TIRAMISU)
   public void setExternalPnoScanRequest_differentUid_failureCallbackInvokedWithBusyStatus()
       throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
 
     wifiManager.setExternalPnoScanRequest(
         List.of(WifiSsid.fromBytes(new byte[] {1, 2, 3})),
@@ -1051,7 +1063,7 @@ public class ShadowWifiManagerTest {
         Executors.newSingleThreadExecutor(),
         callback);
 
-    assertThat(callback.failedRegistrations.take())
+    assertThat(delegate.failedRegistrations.take())
         .isEqualTo(PnoScanResultsCallback.REGISTER_PNO_CALLBACK_RESOURCE_BUSY);
   }
 
@@ -1059,7 +1071,9 @@ public class ShadowWifiManagerTest {
   @Config(minSdk = TIRAMISU)
   public void clearExternalPnoScanRequest_outstandingRequest_callbackInvokedWithUnregisteredStatus()
       throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
 
     wifiManager.setExternalPnoScanRequest(
         List.of(WifiSsid.fromBytes(new byte[] {1, 2, 3})),
@@ -1068,14 +1082,16 @@ public class ShadowWifiManagerTest {
         callback);
     wifiManager.clearExternalPnoScanRequest();
 
-    assertThat(callback.removedRegistrations.take())
+    assertThat(delegate.removedRegistrations.take())
         .isEqualTo(PnoScanResultsCallback.REMOVE_PNO_CALLBACK_UNREGISTERED);
   }
 
   @Test
   @Config(minSdk = TIRAMISU)
   public void clearExternalPnoScanRequest_wrongUid_callbackNotInvoked() throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
     ExecutorService executor = Executors.newSingleThreadExecutor();
 
     wifiManager.setExternalPnoScanRequest(
@@ -1096,13 +1112,15 @@ public class ShadowWifiManagerTest {
     executor.shutdown();
 
     assertThat(executor.awaitTermination(5, MINUTES)).isTrue();
-    assertThat(callback.removedRegistrations).isEmpty();
+    assertThat(delegate.removedRegistrations).isEmpty();
   }
 
   @Test
   @Config(minSdk = TIRAMISU)
   public void networksFoundFromPnoScan_matchingSsid_availableCallbackInvoked() throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
     WifiSsid wifiSsid = WifiSsid.fromBytes(new byte[] {1, 2, 3});
     ScanResult scanResult = new ScanResult();
     scanResult.setWifiSsid(wifiSsid);
@@ -1111,14 +1129,16 @@ public class ShadowWifiManagerTest {
         List.of(wifiSsid), /* frequencies= */ null, Executors.newSingleThreadExecutor(), callback);
     shadowOf(wifiManager).networksFoundFromPnoScan(List.of(scanResult));
 
-    assertThat(callback.incomingScanResults.take()).containsExactly(scanResult);
+    assertThat(delegate.incomingScanResults.take()).containsExactly(scanResult);
   }
 
   @Test
   @Config(minSdk = TIRAMISU)
   public void networksFoundFromPnoScan_matchingSsid_removedCallbackInvokedWithDeliveredStatus()
       throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
     WifiSsid wifiSsid = WifiSsid.fromBytes(new byte[] {1, 2, 3});
     ScanResult scanResult = new ScanResult();
     scanResult.setWifiSsid(wifiSsid);
@@ -1127,14 +1147,16 @@ public class ShadowWifiManagerTest {
         List.of(wifiSsid), /* frequencies= */ null, Executors.newSingleThreadExecutor(), callback);
     shadowOf(wifiManager).networksFoundFromPnoScan(List.of(scanResult));
 
-    assertThat(callback.removedRegistrations.take())
+    assertThat(delegate.removedRegistrations.take())
         .isEqualTo(PnoScanResultsCallback.REMOVE_PNO_CALLBACK_RESULTS_DELIVERED);
   }
 
   @Test
   @Config(minSdk = TIRAMISU)
   public void networksFoundFromPnoScan_matchingSsid_scanResultsAvailableBroadcastSent() {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
     WifiSsid wifiSsid = WifiSsid.fromBytes(new byte[] {1, 2, 3});
     ScanResult scanResult = new ScanResult();
     scanResult.setWifiSsid(wifiSsid);
@@ -1157,7 +1179,9 @@ public class ShadowWifiManagerTest {
   @Config(minSdk = TIRAMISU)
   public void networksFoundFromPnoScan_noMatchingSsid_availableCallbackNotInvoked()
       throws Exception {
-    TestPnoScanResultsCallback callback = new TestPnoScanResultsCallback();
+    TestPnoScanResultsCallbackDelegate delegate = new TestPnoScanResultsCallbackDelegate();
+    PnoScanResultsCallback callback =
+        ReflectionHelpers.createDelegatingProxy(PnoScanResultsCallback.class, delegate);
     ExecutorService executor = Executors.newSingleThreadExecutor();
     WifiSsid wifiSsid = WifiSsid.fromBytes(new byte[] {1, 2, 3});
     WifiSsid otherWifiSsid = WifiSsid.fromBytes(new byte[] {9, 8, 7, 6});
@@ -1171,7 +1195,7 @@ public class ShadowWifiManagerTest {
     executor.shutdown();
 
     assertThat(executor.awaitTermination(5, MINUTES)).isTrue();
-    assertThat(callback.incomingScanResults).isEmpty();
+    assertThat(delegate.incomingScanResults).isEmpty();
   }
 
   @Test
@@ -1368,28 +1392,24 @@ public class ShadowWifiManagerTest {
     }
   }
 
-  private class TestPnoScanResultsCallback implements PnoScanResultsCallback {
+  private static class TestPnoScanResultsCallbackDelegate {
     LinkedBlockingQueue<List<ScanResult>> incomingScanResults = new LinkedBlockingQueue<>();
     LinkedBlockingQueue<Object> successfulRegistrations = new LinkedBlockingQueue<>();
     LinkedBlockingQueue<Integer> failedRegistrations = new LinkedBlockingQueue<>();
     LinkedBlockingQueue<Integer> removedRegistrations = new LinkedBlockingQueue<>();
 
-    @Override
     public void onScanResultsAvailable(List<ScanResult> scanResults) {
       incomingScanResults.add(scanResults);
     }
 
-    @Override
     public void onRegisterSuccess() {
       successfulRegistrations.add(new Object());
     }
 
-    @Override
     public void onRegisterFailed(int reason) {
       failedRegistrations.add(reason);
     }
 
-    @Override
     public void onRemoved(int reason) {
       removedRegistrations.add(reason);
     }

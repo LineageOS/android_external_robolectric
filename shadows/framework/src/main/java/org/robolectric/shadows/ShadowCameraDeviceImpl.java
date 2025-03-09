@@ -20,6 +20,7 @@ import android.view.Surface;
 import com.google.common.util.concurrent.MoreExecutors;
 import java.util.List;
 import java.util.concurrent.Executor;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.InDevelopment;
@@ -33,7 +34,7 @@ import org.robolectric.util.reflector.WithType;
 import org.robolectric.versioning.AndroidVersions.V;
 
 /** Shadow class for {@link CameraDeviceImpl} */
-@Implements(value = CameraDeviceImpl.class, isInAndroidSdk = false, looseSignatures = true)
+@Implements(value = CameraDeviceImpl.class, isInAndroidSdk = false)
 public class ShadowCameraDeviceImpl {
   @RealObject private CameraDeviceImpl realObject;
   private boolean closed = false;
@@ -41,27 +42,67 @@ public class ShadowCameraDeviceImpl {
   @Implementation(minSdk = V.SDK_INT)
   @InDevelopment
   protected void __constructor__(
-      Object cameraId,
-      Object callback,
-      Object executor,
-      Object characteristics,
-      Object cameraManager,
-      Object appTargetSdkVersion,
-      Object ctx,
-      Object cameraDeviceSetup) {
+      String cameraId,
+      StateCallback callback,
+      Executor executor,
+      CameraCharacteristics characteristics,
+      CameraManager cameraManager,
+      int appTargetSdkVersion,
+      Context ctx,
+      @ClassName("android.hardware.camera2.CameraDevice$CameraDeviceSetup")
+          Object cameraDeviceSetup) {
     try {
       reflector(CameraDeviceImplReflector.class, realObject)
           .__constructor__(
-              (String) cameraId,
-              (StateCallback) callback,
-              (Executor) executor,
-              (CameraCharacteristics) characteristics,
-              (CameraManager) cameraManager,
-              (int) appTargetSdkVersion,
-              (Context) ctx,
+              cameraId,
+              callback,
+              executor,
+              characteristics,
+              cameraManager,
+              appTargetSdkVersion,
+              ctx,
               // TODO(juliansull) Remove once Robolectric compiles against Android V
               Class.forName("android.hardware.camera2.CameraDevice$CameraDeviceSetup")
                   .cast(cameraDeviceSetup));
+    } catch (ClassNotFoundException e) {
+      throw new RuntimeException(e);
+    }
+
+    // When singleThreadedDeviceExecutor flag is set, this gets put on a background thread.
+    // This isn't necessary for Robolectric as there is no real camera, so we default back to the
+    // given executor.
+    reflector(CameraDeviceImplReflector.class, realObject)
+        .setDeviceExecutor(MoreExecutors.directExecutor());
+  }
+
+  // TODO(congxiliu) Change minsdk to Baklava once Baklava is fully released in AOSP
+  @Implementation(minSdk = V.SDK_INT)
+  @InDevelopment
+  protected void __constructor__(
+      String cameraId,
+      StateCallback callback,
+      Executor executor,
+      CameraCharacteristics characteristics,
+      CameraManager cameraManager,
+      int appTargetSdkVersion,
+      Context ctx,
+      @ClassName("android.hardware.camera2.CameraDevice$CameraDeviceSetup")
+          Object cameraDeviceSetup,
+      boolean unused) {
+    try {
+      reflector(CameraDeviceImplReflector.class, realObject)
+          .__constructor__(
+              cameraId,
+              callback,
+              executor,
+              characteristics,
+              cameraManager,
+              appTargetSdkVersion,
+              ctx,
+              // TODO(juliansull) Remove once Robolectric compiles against Android V
+              Class.forName("android.hardware.camera2.CameraDevice$CameraDeviceSetup")
+                  .cast(cameraDeviceSetup),
+              unused);
     } catch (ClassNotFoundException e) {
       throw new RuntimeException(e);
     }
@@ -164,6 +205,19 @@ public class ShadowCameraDeviceImpl {
         Context ctx,
         @WithType("android.hardware.camera2.CameraDevice$CameraDeviceSetup")
             Object cameraDeviceSetup);
+
+    @Direct
+    void __constructor__(
+        String cameraId,
+        StateCallback callback,
+        Executor executor,
+        CameraCharacteristics characteristics,
+        CameraManager cameraManager,
+        int appTargetSdkVersion,
+        Context ctx,
+        @WithType("android.hardware.camera2.CameraDevice$CameraDeviceSetup")
+            Object cameraDeviceSetup,
+        boolean unused);
 
     @Accessor("mDeviceExecutor")
     void setDeviceExecutor(Executor executor);

@@ -20,6 +20,7 @@ permissions:
 jobs:
   graphics_tests:
     strategy:
+      fail-fast: false
       matrix:
         device: [
           macos-13, # Tests Mac x86_64
@@ -38,11 +39,10 @@ jobs:
           distribution: 'adopt'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v4
 
       - name: Show runner info
-        run: |
-          uname -a
+        run: uname -a
 
       - name: Run unit tests
         env:

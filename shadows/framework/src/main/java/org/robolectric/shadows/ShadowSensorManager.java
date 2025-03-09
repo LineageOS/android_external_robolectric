@@ -20,22 +20,33 @@ import com.google.common.collect.Multimaps;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
+import org.robolectric.annotation.Resetter;
 import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.ReflectionHelpers.ClassParameter;
 
-@Implements(value = SensorManager.class, looseSignatures = true)
+/** Shadow for {@link SensorManager}. */
+@Implements(value = SensorManager.class)
 public class ShadowSensorManager {
-  public boolean forceListenersToFail = false;
-  private final Multimap<Integer, Sensor> sensorMap =
+  private static AtomicBoolean forceListenersToFail = new AtomicBoolean();
+  private static final Multimap<Integer, Sensor> sensorMap =
       Multimaps.synchronizedMultimap(HashMultimap.create());
-  private final Multimap<SensorEventListener, Sensor> listeners =
+  private static final Multimap<SensorEventListener, Sensor> listeners =
       Multimaps.synchronizedMultimap(HashMultimap.create());
 
   @RealObject private SensorManager realObject;
+
+  @Resetter
+  public static void reset() {
+    sensorMap.clear();
+    listeners.clear();
+    forceListenersToFail.set(false);
+  }
 
   /**
    * Provide a Sensor for the indicated sensor type.
@@ -110,9 +121,13 @@ public class ShadowSensorManager {
     return registerListener(listener, sensor, rate);
   }
 
+  public void setForceListenersToFail(boolean forceListenersToFail) {
+    this.forceListenersToFail.set(forceListenersToFail);
+  }
+
   @Implementation
   protected boolean registerListener(SensorEventListener listener, Sensor sensor, int rate) {
-    if (forceListenersToFail) {
+    if (this.forceListenersToFail.get()) {
       return false;
     }
     listeners.put(listener, sensor);
@@ -243,7 +258,8 @@ public class ShadowSensorManager {
   }
 
   @Implementation(minSdk = O)
-  protected Object createDirectChannel(MemoryFile mem) {
+  protected @ClassName("android.hardware.SensorDirectChannel") Object createDirectChannel(
+      MemoryFile mem) {
     return ReflectionHelpers.callConstructor(
         SensorDirectChannel.class,
         ClassParameter.from(SensorManager.class, realObject),

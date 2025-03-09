@@ -4,6 +4,8 @@ import static android.os.Build.VERSION_CODES.M;
 import static android.os.Build.VERSION_CODES.N;
 import static android.os.Build.VERSION_CODES.N_MR1;
 import static android.os.Build.VERSION_CODES.O;
+import static android.os.Build.VERSION_CODES.O_MR1;
+import static android.os.Build.VERSION_CODES.P;
 import static android.os.Build.VERSION_CODES.Q;
 import static android.os.Build.VERSION_CODES.S;
 import static org.robolectric.util.reflector.Reflector.reflector;
@@ -22,7 +24,7 @@ import org.robolectric.util.reflector.Direct;
 import org.robolectric.util.reflector.ForType;
 
 /** Robolectric provides overrides for fetching and updating transport. */
-@Implements(value = NetworkCapabilities.class, looseSignatures = true)
+@Implements(value = NetworkCapabilities.class)
 public class ShadowNetworkCapabilities {
 
   @RealObject protected NetworkCapabilities realNetworkCapabilities;
@@ -95,12 +97,42 @@ public class ShadowNetworkCapabilities {
 
   /** Sets the LinkDownstreamBandwidthKbps of the NetworkCapabilities. */
   @HiddenApi
-  @Implementation
-  public Object setLinkDownstreamBandwidthKbps(Object kbps) {
-    // Loose signatures is necessary because the return type of setLinkDownstreamBandwidthKbps
-    // changed from void to NetworkCapabilities starting from API 28 (Pie)
+  @Implementation(maxSdk = O_MR1, methodName = "setLinkDownstreamBandwidthKbps")
+  protected void setLinkDownstreamBandwidthKbpsPrePie(int kbps) {
+    reflector(NetworkCapabilitiesReflector.class, realNetworkCapabilities)
+        .setLinkDownstreamBandwidthKbps(kbps);
+  }
+
+  /**
+   * Sets the LinkDownstreamBandwidthKbps of the NetworkCapabilities.
+   *
+   * <p>Return type changed to {@code NetworkCapabilities} starting from Pie.
+   */
+  @HiddenApi
+  @Implementation(minSdk = P)
+  public NetworkCapabilities setLinkDownstreamBandwidthKbps(int kbps) {
     return reflector(NetworkCapabilitiesReflector.class, realNetworkCapabilities)
-        .setLinkDownstreamBandwidthKbps((int) kbps);
+        .setLinkDownstreamBandwidthKbps(kbps);
+  }
+
+  /** Sets the LinkUpstreamBandwidthKbps of the NetworkCapabilities. */
+  @HiddenApi
+  @Implementation(maxSdk = O_MR1, methodName = "setLinkUpstreamBandwidthKbps")
+  protected void setLinkUpstreamBandwidthKbpsPrePie(int kbps) {
+    reflector(NetworkCapabilitiesReflector.class, realNetworkCapabilities)
+        .setLinkUpstreamBandwidthKbps(kbps);
+  }
+
+  /**
+   * Sets the LinkUpstreamBandwidthKbps of the NetworkCapabilities.
+   *
+   * <p>Return type changed to {@code NetworkCapabilities} starting from Pie.
+   */
+  @HiddenApi
+  @Implementation(minSdk = P)
+  public NetworkCapabilities setLinkUpstreamBandwidthKbps(int kbps) {
+    return reflector(NetworkCapabilitiesReflector.class, realNetworkCapabilities)
+        .setLinkUpstreamBandwidthKbps(kbps);
   }
 
   /** Clears capabilities. */
@@ -150,5 +182,8 @@ public class ShadowNetworkCapabilities {
 
     @Direct
     NetworkCapabilities setLinkDownstreamBandwidthKbps(int kbps);
+
+    @Direct
+    NetworkCapabilities setLinkUpstreamBandwidthKbps(int kbps);
   }
 }

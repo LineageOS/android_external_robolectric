@@ -20,7 +20,6 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ActivityInfo.Config;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
-import android.content.res.Resources;
 import android.os.Bundle;
 import android.util.DisplayMetrics;
 import android.view.Display;
@@ -235,7 +234,6 @@ public class ActivityController<T extends Activity>
     // root can be null if activity does not have content attached, or if looper is paused.
     // this is unusual but leave the check here for legacy compatibility
     if (root != null) {
-      callDispatchResized(root);
       shadowMainLooper.idleIfPaused();
     }
     return this;
@@ -366,13 +364,8 @@ public class ActivityController<T extends Activity>
   /**
    * Performs a configuration change on the Activity. See {@link #configurationChange(Configuration,
    * DisplayMetrics, int)}. The configuration is taken from the application's configuration.
-   *
-   * <p>Generally this method should be avoided due to the way Robolectric shares the application
-   * context with activitys by default, this will result in the configuration diff producing no
-   * indicated change and Robolectric will not recreate the activity. Instead prefer to use {@link
-   * #configurationChange(Configuration, DisplayMetrics, int)} and provide an explicit configuration
-   * and diff.
    */
+  @CanIgnoreReturnValue
   public ActivityController<T> configurationChange() {
     return configurationChange(component.getApplicationContext().getResources().getConfiguration());
   }
@@ -381,19 +374,40 @@ public class ActivityController<T extends Activity>
    * Performs a configuration change on the Activity. See {@link #configurationChange(Configuration,
    * DisplayMetrics, int)}. The changed configuration is calculated based on the activity's existing
    * configuration.
-   *
-   * <p>When using {@link RuntimeEnvironment#setQualifiers(String)} prefer to use the {@link
-   * #configurationChange(Configuration, DisplayMetrics, int)} method and calculate the
-   * configuration diff manually, due to the way Robolectric uses the application context for
-   * activitys by default the configuration diff will otherwise be incorrectly calculated and the
-   * activity will not get recreqted if it doesn't handle configuration change.
    */
+  @CanIgnoreReturnValue
   public ActivityController<T> configurationChange(final Configuration newConfiguration) {
-    Resources resources = component.getResources();
-    return configurationChange(
-        newConfiguration,
-        resources.getDisplayMetrics(),
-        resources.getConfiguration().diff(newConfiguration));
+    return configurationChange(newConfiguration, component.getResources().getDisplayMetrics());
+  }
+
+  /**
+   * Performs a configuration change on the Activity.
+   *
+   * <p>If the activity is configured to handle changes without being recreated, {@link
+   * Activity#onConfigurationChanged(Configuration)} will be called. Otherwise, the activity is
+   * recreated as described <a
+   * href="https://developer.android.com/guide/topics/resources/runtime-changes.html">here</a>.
+   *
+   * <p>Typically configuration should be applied using {@link RuntimeEnvironment#setQualifiers} and
+   * then propagated to the activity controller, e.g.
+   *
+   * <pre>{@code
+   * RuntimeEnvironment.setQualifiers("+ar-rXB");
+   * activityController.configurationChange();
+   * }</pre>
+   *
+   * @param newConfiguration The new configuration to be set.
+   * @return ActivityController instance
+   */
+  @CanIgnoreReturnValue
+  public ActivityController<T> configurationChange(
+      Configuration newConfiguration, DisplayMetrics newMetrics) {
+    ActivityReflector activityReflector = reflector(ActivityReflector.class, component);
+    Configuration currentConfig =
+        System.getProperty("robolectric.configurationChangeFix", "true").equals("true")
+            ? activityReflector.getCurrentConfig()
+            : component.getResources().getConfiguration();
+    return configurationChange(newConfiguration, newMetrics, currentConfig.diff(newConfiguration));
   }
 
   /**
@@ -421,13 +435,12 @@ public class ActivityController<T extends Activity>
    *     {@link Configuration#diff(Configuration)}). This will be used to determine whether the
    *     activity handles the configuration change or not, and whether it must be recreated.
    * @return ActivityController instance
+   * @deprecated The config change should be calculated internally by the activity controller based
+   *     on the previous configuration, use {@link #configurationChange(Configuration,
+   *     DisplayMetrics)} instead.
    */
-  // TODO: Passing in the changed config explicitly should be unnecessary (i.e. the controller
-  //  should be able to diff against the current activity configuration), but due to the way
-  //  Robolectric uses the application context as the default activity context the application
-  //  context may be updated before entering this method (e.g. if RuntimeEnvironment#setQualifiers
-  //  was called before calling this method). When this issue is fixed this method should be
-  //  deprecated and removed.
+  @Deprecated
+  @CanIgnoreReturnValue
   public ActivityController<T> configurationChange(
       Configuration newConfiguration, DisplayMetrics newMetrics, @Config int changedConfig) {
     component.getResources().updateConfiguration(newConfiguration, newMetrics);
@@ -440,6 +453,9 @@ public class ActivityController<T extends Activity>
         == filteredChanges) {
       shadowMainLooper.runPaused(
           () -> {
+            reflector(ActivityReflector.class, component)
+                .getCurrentConfig()
+                .setTo(newConfiguration);
             component.onConfigurationChanged(newConfiguration);
             ViewRootImpl root = getViewRoot();
             if (root != null) {
@@ -585,15 +601,15 @@ public class ActivityController<T extends Activity>
     switch (originalState) {
       case INITIAL:
         create();
-        // fall through
+      // fall through
       case CREATED:
       case RESTARTED:
         start();
         postCreate(null);
-        // fall through
+      // fall through
       case STARTED:
         resume();
-        // fall through
+      // fall through
       default:
         // fall through
     }
@@ -613,10 +629,10 @@ public class ActivityController<T extends Activity>
       case STARTED:
       case RESUMED:
         pause();
-        // fall through
+      // fall through
       case PAUSED:
         stop();
-        // fall through
+      // fall through
       case STOPPED:
         break;
       default:
@@ -678,16 +694,16 @@ public class ActivityController<T extends Activity>
         return;
       case RESUMED:
         pause();
-        // fall through
+      // fall through
       case PAUSED:
-        // fall through
+      // fall through
       case RESTARTED:
-        // fall through
+      // fall through
       case STARTED:
         stop();
-        // fall through
+      // fall through
       case STOPPED:
-        // fall through
+      // fall through
       case CREATED:
         break;
     }
@@ -711,5 +727,11 @@ public class ActivityController<T extends Activity>
 
     @Accessor("activity")
     Object getActivity();
+  }
+
+  @ForType(Activity.class)
+  interface ActivityReflector {
+    @Accessor("mCurrentConfig")
+    Configuration getCurrentConfig();
   }
 }

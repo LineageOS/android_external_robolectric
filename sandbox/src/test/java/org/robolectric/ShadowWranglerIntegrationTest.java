@@ -6,6 +6,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import javax.annotation.Nullable;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -347,6 +350,17 @@ public class ShadowWranglerIntegrationTest {
     }
   }
 
+  @Instrument
+  public static class AClassWithGenericFunctionParam {
+    public CharSequence aMethod(List<CharSequence> strs) {
+      String ret = "";
+      for (CharSequence s : strs) {
+        ret = ret + s;
+      }
+      return ret;
+    }
+  }
+
   @Implements(value = AClassWithDifficultArgs.class, looseSignatures = true)
   public static class ShadowAClassWithDifficultArgs {
     @Implementation
@@ -367,10 +381,51 @@ public class ShadowWranglerIntegrationTest {
     assertThat(new AClassWithDifficultArgs().aMethod("bc")).isEqualTo("ClassNameAnnotated-bc");
   }
 
+  @SandboxConfig(shadows = ShadowAClassWithDifficultArgsUseClassNameButUnmatchedReturn.class)
+  @Test
+  public void methodMatch_functionReturnTypeNotMatch_callShadowMethod() {
+    // Shadow method with different function return type would still be deemed as a match,
+    // as long as the type runtime castable to shadowed method function return type.
+    assertThat(new AClassWithDifficultArgs().aMethod("bc")).isEqualTo("ClassNameAnnotated-bc");
+  }
+
+  @SandboxConfig(shadows = ShadowAClassWithDifficultArgsUseClassNameWithMultipleAnnotation.class)
+  @Test
+  public void methodMatch_classNameAnnotatedAndMultipleAnnotations_shouldMatch() {
+    assertThat(new AClassWithDifficultArgs().aMethod("bc"))
+        .isEqualTo("ClassNameAnnotatedMultiAnnotation-bc");
+  }
+
+  @SandboxConfig(shadows = ShadowAClassWithDifficultArgsReturnTypeUseClassName.class)
+  @Test
+  public void methodMatch_classNameAnnotatedForParamsAndReturn_shouldMatch() {
+    assertThat(new AClassWithDifficultArgs().aMethod("bc"))
+        .isEqualTo("ClassNameAnnotatedParamsAndReturn-bc");
+  }
+
   @SandboxConfig(shadows = ShadowAClassWithDifficultArgsUseClassNameWithMethodRename.class)
   @Test
   public void methodMatch_classNameAnnotatedMatchesSupportMethodRename() {
     assertThat(new AClassWithDifficultArgs().aMethod("bc")).isEqualTo("ClassNameAnnotated-bc");
+  }
+
+  @SandboxConfig(shadows = ShadowAClassWithGenericFunctionParamUseClassNameWithTypeArgument.class)
+  @Test
+  public void methodMatch_classNameAnnotatedWithGeneric() {
+    List<CharSequence> para = new ArrayList<>();
+    para.add("ab");
+    para.add("cd");
+    assertThat(new AClassWithGenericFunctionParam().aMethod(para)).isEqualTo("abcd");
+  }
+
+  @SandboxConfig(shadows = ShadowAClassWithGenericFunctionParamUseClassNameTypeErasure.class)
+  @Test
+  public void methodMatch_classNameAnnotatedWithGenericTypeErasure() {
+    List<CharSequence> para = new ArrayList<>();
+    para.add("ab");
+    para.add("cd");
+    assertThat(new AClassWithGenericFunctionParam().aMethod(para))
+        .isEqualTo("ClassNameGenericAnnotated");
   }
 
   @Implements(value = AClassWithDifficultArgs.class)
@@ -384,8 +439,35 @@ public class ShadowWranglerIntegrationTest {
   @Implements(value = AClassWithDifficultArgs.class)
   public static class ShadowAClassWithDifficultArgsUseClassName {
 
+    protected @ClassName("java.lang.CharSequence") Object aMethod(
+        @ClassName("java.lang.CharSequence") Object s) {
+      return "ClassNameAnnotated-" + s;
+    }
+  }
+
+  @Implements(value = AClassWithDifficultArgs.class)
+  public static class ShadowAClassWithDifficultArgsUseClassNameButUnmatchedReturn {
+
     protected Object aMethod(@ClassName("java.lang.CharSequence") Object s) {
       return "ClassNameAnnotated-" + s;
+    }
+  }
+
+  @Implements(value = AClassWithDifficultArgs.class)
+  public static class ShadowAClassWithDifficultArgsReturnTypeUseClassName {
+
+    protected @ClassName("java.lang.CharSequence") Object aMethod(
+        @ClassName("java.lang.CharSequence") Object s) {
+      return "ClassNameAnnotatedParamsAndReturn-" + s;
+    }
+  }
+
+  @Implements(value = AClassWithDifficultArgs.class)
+  public static class ShadowAClassWithDifficultArgsUseClassNameWithMultipleAnnotation {
+
+    protected @ClassName("java.lang.CharSequence") Object aMethod(
+        @Nullable @ClassName("java.lang.CharSequence") Object s) {
+      return "ClassNameAnnotatedMultiAnnotation-" + s;
     }
   }
 
@@ -393,8 +475,27 @@ public class ShadowWranglerIntegrationTest {
   public static class ShadowAClassWithDifficultArgsUseClassNameWithMethodRename {
 
     @Implementation(methodName = "aMethod")
-    protected Object renamedMethod(@ClassName("java.lang.CharSequence") Object s) {
+    protected @ClassName("java.lang.CharSequence") Object renamedMethod(
+        @ClassName("java.lang.CharSequence") Object s) {
       return "ClassNameAnnotated-" + s;
+    }
+  }
+
+  @Implements(value = AClassWithGenericFunctionParam.class)
+  public static class ShadowAClassWithGenericFunctionParamUseClassNameWithTypeArgument {
+
+    protected @ClassName("java.lang.CharSequence") Object aMethod(
+        @ClassName("java.util.List<java.lang.CharSequence>") Object s) {
+      return "ClassNameGenericAnnotated-" + s;
+    }
+  }
+
+  @Implements(value = AClassWithGenericFunctionParam.class)
+  public static class ShadowAClassWithGenericFunctionParamUseClassNameTypeErasure {
+
+    protected @ClassName("java.lang.CharSequence") Object aMethod(
+        @ClassName("java.util.List") Object s) {
+      return "ClassNameGenericAnnotated";
     }
   }
 

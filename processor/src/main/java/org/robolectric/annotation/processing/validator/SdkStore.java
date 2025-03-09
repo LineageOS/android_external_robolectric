@@ -56,6 +56,8 @@ import org.robolectric.versioning.AndroidVersions;
 /** Encapsulates a collection of Android framework jars. */
 public class SdkStore {
 
+  private static final String VALID_CLASS_NAME_ANNOTATION_CHARS = "^[a-zA-Z0-9_$.;\\[\\]]+$";
+
   private final Set<Sdk> sdks = new TreeSet<>();
   private boolean loaded = false;
 
@@ -593,21 +595,18 @@ public class SdkStore {
         String paramType = canonicalize(varTypeMirror);
 
         // If parameter is annotated with @ClassName, then use the indicated type instead.
-        List<? extends AnnotationMirror> annotationMirrors = variableElement.getAnnotationMirrors();
-        for (AnnotationMirror am : annotationMirrors) {
-          if (am.getAnnotationType().toString().equals(ClassName.class.getName())) {
-            Map<? extends ExecutableElement, ? extends AnnotationValue> annotationEntries =
-                am.getElementValues();
-            Set<? extends ExecutableElement> keys = annotationEntries.keySet();
-            for (ExecutableElement key : keys) {
-              if ("value()".equals(key.toString())) {
-                AnnotationValue annotationValue = annotationEntries.get(key);
-                paramType = annotationValue.getValue().toString().replace('$', '.');
-                break;
-              }
-            }
-            break;
+        ClassName className = variableElement.getAnnotation(ClassName.class);
+        if (className != null) {
+          if (!className.value().matches(VALID_CLASS_NAME_ANNOTATION_CHARS)) {
+            throw new RuntimeException(
+                "Invalid @ClassName annotation '"
+                    + paramType
+                    + "' in "
+                    + methodElement.getEnclosingElement().getSimpleName()
+                    + "."
+                    + methodElement.getSimpleName());
           }
+          paramType = className.value().replace('$', '.');
         }
 
         String paramTypeWithoutGenerics = typeWithoutGenerics(paramType);
@@ -668,14 +667,36 @@ public class SdkStore {
     private final boolean isStatic;
     private final String returnType;
 
+    /** Create a MethodExtraInfo from ASM in-memory representation (an Android framework method). */
     public MethodExtraInfo(MethodNode method) {
       this.isStatic = (method.access & Opcodes.ACC_STATIC) != 0;
       this.returnType = typeWithoutGenerics(normalize(Type.getReturnType(method.desc)));
     }
 
+    /** Create a MethodExtraInfo from AST (an @Implementation method in a shadow class). */
     public MethodExtraInfo(ExecutableElement methodElement) {
       this.isStatic = methodElement.getModifiers().contains(Modifier.STATIC);
-      this.returnType = typeWithoutGenerics(canonicalize(methodElement.getReturnType()));
+
+      TypeMirror rtType = methodElement.getReturnType();
+      String rt = canonicalize(rtType);
+      // If return type is annotated with @ClassName, then use the indicated type instead.
+      List<? extends AnnotationMirror> annotationMirrors = rtType.getAnnotationMirrors();
+      for (AnnotationMirror am : annotationMirrors) {
+        if (am.getAnnotationType().toString().equals(ClassName.class.getName())) {
+          Map<? extends ExecutableElement, ? extends AnnotationValue> annotationEntries =
+              am.getElementValues();
+          Set<? extends ExecutableElement> keys = annotationEntries.keySet();
+          for (ExecutableElement key : keys) {
+            if ("value()".equals(key.toString())) {
+              AnnotationValue annotationValue = annotationEntries.get(key);
+              rt = annotationValue.getValue().toString().replace('$', '.');
+              break;
+            }
+          }
+          break;
+        }
+      }
+      this.returnType = typeWithoutGenerics(rt);
     }
 
     @Override

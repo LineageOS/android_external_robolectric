@@ -39,7 +39,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.Executor;
 import org.robolectric.RuntimeEnvironment;
+import org.robolectric.annotation.ClassName;
 import org.robolectric.annotation.HiddenApi;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
@@ -50,7 +53,7 @@ import org.robolectric.util.reflector.Constructor;
 import org.robolectric.util.reflector.ForType;
 
 @SuppressWarnings({"UnusedDeclaration"})
-@Implements(value = AudioManager.class, looseSignatures = true)
+@Implements(value = AudioManager.class)
 public class ShadowAudioManager {
   @RealObject AudioManager realAudioManager;
 
@@ -63,6 +66,7 @@ public class ShadowAudioManager {
   public static final ImmutableList<Integer> ALL_STREAMS =
       ImmutableList.of(
           AudioManager.STREAM_MUSIC,
+          AudioManager.STREAM_ASSISTANT,
           AudioManager.STREAM_ALARM,
           AudioManager.STREAM_NOTIFICATION,
           AudioManager.STREAM_RING,
@@ -100,6 +104,8 @@ public class ShadowAudioManager {
   private final Map<String, String> parameters = new HashMap<>();
   private final Map<Integer, Boolean> streamsMuteState = new HashMap<>();
   private final Map<String, AudioPolicy> registeredAudioPolicies = new HashMap<>();
+  private final Map<AudioManager.OnCommunicationDeviceChangedListener, Executor>
+      registeredCommunicationDeviceChangedListeners = new HashMap<>();
   private int audioSessionIdCounter = 1;
   private final Map<AudioAttributes, ImmutableList<Object>> devicesForAttributes = new HashMap<>();
   private final List<AudioDeviceInfo> outputDevicesWithDirectProfiles = new ArrayList<>();
@@ -359,12 +365,12 @@ public class ShadowAudioManager {
         continue;
       }
 
-      String[] splittedPair = pair.split("=", 0);
-      if (splittedPair.length != 2) {
+      String[] splitPair = pair.split("=", 0);
+      if (splitPair.length != 2) {
         throw new IllegalArgumentException(
             "keyValuePairs: each pair should be in the format of key=value;");
       }
-      parameters.put(splittedPair[0], splittedPair[1]);
+      parameters.put(splitPair[0], splitPair[1]);
     }
   }
 
@@ -469,7 +475,8 @@ public class ShadowAudioManager {
    */
   @Implementation(minSdk = R)
   @NonNull
-  protected List<Object> getDevicesForAttributes(@NonNull AudioAttributes attributes) {
+  protected List</*android.media.AudioDeviceAttributes*/ ?> getDevicesForAttributes(
+      @NonNull AudioAttributes attributes) {
     ImmutableList<Object> devices = devicesForAttributes.get(attributes);
     return devices == null ? defaultDevicesForAttributes : devices;
   }
@@ -504,6 +511,51 @@ public class ShadowAudioManager {
   public void setAudioDevicesForAttributes(
       @NonNull AudioAttributes attributes, @NonNull ImmutableList<AudioDeviceInfo> devices) {
     audioDevicesForAttributes.put(attributes, devices);
+  }
+
+  /**
+   * Registers a {@link AudioManager.OnCommunicationDeviceChangedListener} that can later be called
+   * with {@link #callOnCommunicationDeviceChangedListeners}. The provided executor will be used
+   * when calling {@link
+   * AudioManager.OnCommunicationDeviceChangedListener#onCommunicationDeviceChanged}
+   */
+  @Implementation(minSdk = S)
+  protected void addOnCommunicationDeviceChangedListener(
+      Executor executor, AudioManager.OnCommunicationDeviceChangedListener listener) {
+    Objects.requireNonNull(executor);
+    Objects.requireNonNull(listener);
+    if (registeredCommunicationDeviceChangedListeners.containsKey(listener)) {
+      throw new IllegalArgumentException(
+          "attempt to call addOnCommunicationDeviceChangedListener on a previously registered"
+              + " listener");
+    }
+    registeredCommunicationDeviceChangedListeners.put(listener, executor);
+  }
+
+  /**
+   * Unregisters a previously registered {@link AudioManager.OnCommunicationDeviceChangedListener}.
+   */
+  @Implementation(minSdk = S)
+  protected void removeOnCommunicationDeviceChangedListener(
+      AudioManager.OnCommunicationDeviceChangedListener listener) {
+    Objects.requireNonNull(listener);
+    if (!registeredCommunicationDeviceChangedListeners.containsKey(listener)) {
+      throw new IllegalArgumentException(
+          "attempt to call removeOnCommunicationDeviceChangedListener on an unregistered listener");
+    }
+    registeredCommunicationDeviceChangedListeners.remove(listener);
+  }
+
+  /**
+   * Calls the {@link
+   * AudioManager.OnCommunicationDeviceChangedListener#onCommunicationDeviceChanged} method on all
+   * registered {@link AudioManager.OnCommunicationDeviceChangedListener}, using their registered
+   * executors, with the provided {@link AudioDeviceInfo} as argument.
+   */
+  public void callOnCommunicationDeviceChangedListeners(AudioDeviceInfo device) {
+    registeredCommunicationDeviceChangedListeners.forEach(
+        (listener, executor) ->
+            executor.execute(() -> listener.onCommunicationDeviceChanged(device)));
   }
 
   /**
@@ -920,7 +972,8 @@ public class ShadowAudioManager {
   @HiddenApi
   @Implementation(minSdk = P)
   @RequiresPermission(android.Manifest.permission.MODIFY_AUDIO_ROUTING)
-  protected int registerAudioPolicy(@NonNull Object audioPolicy) {
+  protected int registerAudioPolicy(
+      @NonNull @ClassName("android.media.audiopolicy.AudioPolicy") Object audioPolicy) {
     Preconditions.checkNotNull(audioPolicy, "Illegal null AudioPolicy argument");
     AudioPolicy policy = (AudioPolicy) audioPolicy;
     String id = getIdForAudioPolicy(audioPolicy);
@@ -934,7 +987,8 @@ public class ShadowAudioManager {
 
   @HiddenApi
   @Implementation(minSdk = Q)
-  protected void unregisterAudioPolicy(@NonNull Object audioPolicy) {
+  protected void unregisterAudioPolicy(
+      @NonNull @ClassName("android.media.audiopolicy.AudioPolicy") Object audioPolicy) {
     Preconditions.checkNotNull(audioPolicy, "Illegal null AudioPolicy argument");
     AudioPolicy policy = (AudioPolicy) audioPolicy;
     registeredAudioPolicies.remove(getIdForAudioPolicy(policy));

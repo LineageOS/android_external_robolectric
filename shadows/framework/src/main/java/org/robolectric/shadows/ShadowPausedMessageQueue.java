@@ -4,8 +4,6 @@ import static android.os.Build.VERSION_CODES.LOLLIPOP_MR1;
 import static android.os.Build.VERSION_CODES.M;
 import static com.google.common.base.Preconditions.checkState;
 import static org.robolectric.RuntimeEnvironment.getApiLevel;
-import static org.robolectric.shadow.api.Shadow.invokeConstructor;
-import static org.robolectric.util.ReflectionHelpers.ClassParameter.from;
 import static org.robolectric.util.reflector.Reflector.reflector;
 
 import android.os.Looper;
@@ -25,7 +23,6 @@ import org.robolectric.annotation.RealObject;
 import org.robolectric.res.android.NativeObjRegistry;
 import org.robolectric.shadow.api.Shadow;
 import org.robolectric.shadows.ShadowMessage.MessageReflector;
-import org.robolectric.util.ReflectionHelpers;
 import org.robolectric.util.Scheduler;
 import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.Direct;
@@ -38,7 +35,7 @@ import org.robolectric.versioning.AndroidVersions.V;
  * <p>This class should not be referenced directly. Use {@link ShadowMessageQueue} instead.
  */
 @SuppressWarnings("SynchronizeOnNonFinalField")
-@Implements(value = MessageQueue.class, isInAndroidSdk = false, looseSignatures = true)
+@Implements(value = MessageQueue.class, isInAndroidSdk = false)
 public class ShadowPausedMessageQueue extends ShadowMessageQueue {
 
   @RealObject private MessageQueue realQueue;
@@ -54,7 +51,7 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
   // versions
   @Implementation
   protected void __constructor__(boolean quitAllowed) {
-    invokeConstructor(MessageQueue.class, realQueue, from(boolean.class, quitAllowed));
+    reflector(MessageQueueReflector.class, realQueue).__constructor__(quitAllowed);
     long ptr = nativeQueueRegistry.register(this);
     reflector(MessageQueueReflector.class, realQueue).setPtr(ptr);
     clockListener =
@@ -76,12 +73,9 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
     ShadowPausedSystemClock.removeListener(q.clockListener);
   }
 
-  // use the generic Object parameter types here, to avoid conflicts with the non-static
-  // nativePollOnce
-  @Implementation(maxSdk = LOLLIPOP_MR1)
-  protected static void nativePollOnce(Object ptr, Object timeoutMillis) {
-    long ptrLong = (long) ptr;
-    nativeQueueRegistry.getNativeObject(ptrLong).nativePollOnce(ptrLong, (int) timeoutMillis);
+  @Implementation(maxSdk = LOLLIPOP_MR1, methodName = "nativePollOnce")
+  protected static void nativePollOncePreM(long ptr, int timeoutMillis) {
+    nativeQueueRegistry.getNativeObject(ptr).nativePollOnce(ptr, timeoutMillis);
   }
 
   @Implementation(minSdk = M)
@@ -126,13 +120,13 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
     // mark the queue as blocked and wait on a new message.
     synchronized (realQueue) {
       if (isIdle()) {
-        ReflectionHelpers.setField(realQueue, "mBlocked", true);
+        reflector(MessageQueueReflector.class, realQueue).setBlocked(true);
         try {
           realQueue.wait(timeout);
         } catch (InterruptedException ignored) {
           // Fall through and unblock with no messages.
         } finally {
-          ReflectionHelpers.setField(realQueue, "mBlocked", false);
+          reflector(MessageQueueReflector.class, realQueue).setBlocked(false);
         }
       }
     }
@@ -326,7 +320,7 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
           }
         }
         if (msg.isAsynchronous() && getApiLevel() >= V.SDK_INT) {
-          queueReflector.setAsyncMessageCount(queueReflector.getAsyncMessageCount() - 1);
+            queueReflector.setAsyncMessageCount(queueReflector.getAsyncMessageCount() - 1);
         }
       }
       return msg;
@@ -441,6 +435,9 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
   @ForType(MessageQueue.class)
   private interface MessageQueueReflector {
     @Direct
+    void __constructor__(boolean quitAllowed);
+
+    @Direct
     boolean enqueueMessage(Message msg, long when);
 
     Message next();
@@ -472,7 +469,6 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
     @Accessor("mQuitting")
     boolean getQuitting();
 
-    // start for android V
     @Accessor("mLast")
     void setLast(Message msg);
 
@@ -481,6 +477,8 @@ public class ShadowPausedMessageQueue extends ShadowMessageQueue {
 
     @Accessor("mAsyncMessageCount")
     void setAsyncMessageCount(int asyncMessageCount);
-    // end android V
+
+    @Accessor("mBlocked")
+    void setBlocked(boolean blocked);
   }
 }

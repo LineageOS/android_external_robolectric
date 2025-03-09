@@ -13,8 +13,6 @@ import static android.os.UserManager.RESTRICTION_SOURCE_SYSTEM;
 import static android.os.UserManager.USER_TYPE_FULL_GUEST;
 import static android.os.UserManager.USER_TYPE_FULL_RESTRICTED;
 import static android.os.UserManager.USER_TYPE_FULL_SECONDARY;
-import static org.robolectric.shadow.api.Shadow.invokeConstructor;
-import static org.robolectric.util.ReflectionHelpers.ClassParameter.from;
 import static org.robolectric.util.reflector.Reflector.reflector;
 
 import android.Manifest.permission;
@@ -51,6 +49,7 @@ import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.RealObject;
 import org.robolectric.annotation.Resetter;
 import org.robolectric.shadow.api.Shadow;
+import org.robolectric.util.ReflectionHelpers.ClassParameter;
 import org.robolectric.util.reflector.Accessor;
 import org.robolectric.util.reflector.Direct;
 import org.robolectric.util.reflector.ForType;
@@ -77,40 +76,52 @@ public class ShadowUserManager {
   public static final int FLAG_SYSTEM = UserInfo.FLAG_SYSTEM;
   public static final int FLAG_MAIN = UserInfo.FLAG_MAIN;
 
-  private static int maxSupportedUsers = DEFAULT_MAX_SUPPORTED_USERS;
-  private static boolean isMultiUserSupported = false;
-  private static boolean isHeadlessSystemUserMode = false;
-
   private final Object lock = new Object();
 
   @RealObject private UserManager realObject;
-  private UserManagerState userManagerState;
-  private Boolean managedProfile;
-  private Boolean cloneProfile;
-  private boolean userUnlocked = true;
-  private boolean isSystemUser = true;
-  private volatile boolean isForegroundUser = true;
-
-  /**
-   * Holds whether or not a managed profile can be unlocked. If a profile is not in this map, it is
-   * assume it can be unlocked.
-   */
-  private String seedAccountName;
-
-  private String seedAccountType;
-  private PersistableBundle seedAccountOptions;
+  private static UserManagerState userManagerState = new UserManagerState();
 
   private Context context;
-  private boolean enforcePermissions;
-  private int userSwitchability = UserManager.SWITCHABILITY_STATUS_OK;
 
-  private final Set<Account> userAccounts = new HashSet<>();
+  private Context getContext() {
+    return context;
+  }
+
+  /**
+   * Shadowing this is currently required because the real UserManager constructor stores the result
+   * of context.getApplicationContext(), which may be null due to a separate Robolectric bug.
+   */
+  @Implementation
+  protected void __constructor__(Context context, IUserManager service) {
+    Shadow.invokeConstructor(
+        UserManager.class,
+        realObject,
+        ClassParameter.from(Context.class, context),
+        ClassParameter.from(IUserManager.class, service));
+    this.context = context;
+  }
 
   /**
    * Global UserManager state. Shared across {@link UserManager}s created in different {@link
    * Context}s.
    */
   static class UserManagerState {
+    private int maxSupportedUsers = DEFAULT_MAX_SUPPORTED_USERS;
+    private boolean isMultiUserSupported = false;
+    private boolean isHeadlessSystemUserMode = false;
+    private Boolean managedProfile;
+    private Boolean cloneProfile;
+    private boolean userUnlocked = true;
+    private boolean isSystemUser = true;
+    private volatile boolean isForegroundUser = true;
+
+    private String seedAccountName;
+    private String seedAccountType;
+    private PersistableBundle seedAccountOptions;
+    private boolean enforcePermissions;
+    private int userSwitchability = UserManager.SWITCHABILITY_STATUS_OK;
+    private final Set<Account> userAccounts = new HashSet<>();
+
     private final Map<Integer, Integer> userPidMap = new HashMap<>();
 
     /** Holds the serial numbers for all users and profiles, indexed by UserHandle.id */
@@ -123,14 +134,20 @@ public class ShadowUserManager {
     private final Map<Integer, UserInfo> userInfoMap = new HashMap<>();
 
     /**
-     * Each user holds a list of UserHandles of assocated profiles and user itself. User is indexed
+     * Each user holds a list of UserHandles of associated profiles and user itself. User is indexed
      * by UserHandle.id. See UserManager.getProfiles(userId).
      */
     private final Map<Integer, List<UserHandle>> userProfilesListMap = new HashMap<>();
 
     private final Map<Integer, Bundle> userRestrictions = new HashMap<>();
     private final Map<String, Bundle> applicationRestrictions = new HashMap<>();
+
+    /**
+     * Holds whether or not a managed profile can be unlocked. If a profile is not in this map, it
+     * is assume it can be unlocked.
+     */
     private final Map<Integer, Boolean> profileIsLocked = new HashMap<>();
+
     private final Map<Integer, Bitmap> userIcon = new HashMap<>();
 
     private int nextUserId = DEFAULT_SECONDARY_USER_ID;
@@ -151,18 +168,6 @@ public class ShadowUserManager {
       userProfilesListMap.get(id).add(new UserHandle(id));
       userPidMap.put(id, Process.myUid());
     }
-  }
-
-  @Implementation
-  protected void __constructor__(Context context, IUserManager service) {
-    this.context = context;
-    invokeConstructor(
-        UserManager.class,
-        realObject,
-        from(Context.class, context),
-        from(IUserManager.class, service));
-
-    userManagerState = ShadowApplication.getInstance().getUserManagerState();
   }
 
   /**
@@ -243,18 +248,18 @@ public class ShadowUserManager {
   @Implementation(minSdk = R)
   protected List<UserHandle> getAllProfiles() {
     ArrayList<UserHandle> userHandles = new ArrayList<>();
-    if (userManagerState.userProfilesListMap.containsKey(context.getUserId())) {
-      userHandles.addAll(userManagerState.userProfilesListMap.get(context.getUserId()));
+    if (userManagerState.userProfilesListMap.containsKey(getContext().getUserId())) {
+      userHandles.addAll(userManagerState.userProfilesListMap.get(getContext().getUserId()));
       return userHandles;
     }
 
-    userHandles.add(UserHandle.of(context.getUserId()));
+    userHandles.add(UserHandle.of(getContext().getUserId()));
     return userHandles;
   }
 
   @Implementation
   protected UserInfo getProfileParent(int userId) {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException("Requires MANAGE_USERS permission");
     }
     UserInfo profile = getUserInfo(userId);
@@ -273,10 +278,12 @@ public class ShadowUserManager {
   protected UserHandle createProfile(String name, String userType, Set<String> disallowedPackages) {
     int flags = getDefaultUserTypeFlags(userType);
     flags |= FLAG_PROFILE; // assume createProfile used with a profile userType
-    if (enforcePermissions && !hasManageUsersPermission() && !hasCreateUsersPermission()) {
+    if (userManagerState.enforcePermissions
+        && !hasManageUsersPermission()
+        && !hasCreateUsersPermission()) {
       throw new SecurityException(
           "You either need MANAGE_USERS or CREATE_USERS "
-              + "permission to create an user with flags: "
+              + "permission to create a user with flags: "
               + flags);
     }
 
@@ -285,7 +292,7 @@ public class ShadowUserManager {
     }
 
     int profileId = userManagerState.nextUserId++;
-    addProfile(context.getUserId(), profileId, name, flags);
+    addProfile(getContext().getUserId(), profileId, name, flags);
     userManagerState.userInfoMap.get(profileId).userType = userType;
     return UserHandle.of(profileId);
   }
@@ -342,12 +349,12 @@ public class ShadowUserManager {
 
   /** Setter for {@link UserManager#isUserUnlocked()} */
   public void setUserUnlocked(boolean userUnlocked) {
-    this.userUnlocked = userUnlocked;
+    userManagerState.userUnlocked = userUnlocked;
   }
 
   @Implementation(minSdk = N)
   protected boolean isUserUnlocked() {
-    return userUnlocked;
+    return userManagerState.userUnlocked;
   }
 
   /**
@@ -372,18 +379,18 @@ public class ShadowUserManager {
    */
   @Implementation
   protected boolean isManagedProfile() {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException(
           "You need MANAGE_USERS permission to: check if specified user a "
               + "managed profile outside your profile group");
     }
 
-    if (managedProfile != null) {
-      return managedProfile;
+    if (userManagerState.managedProfile != null) {
+      return userManagerState.managedProfile;
     }
 
     if (RuntimeEnvironment.getApiLevel() >= R) {
-      return isManagedProfile(context.getUserId());
+      return isManagedProfile(getContext().getUserId());
     }
 
     return false;
@@ -401,7 +408,7 @@ public class ShadowUserManager {
    */
   @Implementation(minSdk = N)
   protected boolean isManagedProfile(int userHandle) {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException(
           "You need MANAGE_USERS permission to: check if specified user a "
               + "managed profile outside your profile group");
@@ -411,12 +418,12 @@ public class ShadowUserManager {
   }
 
   public void enforcePermissionChecks(boolean enforcePermissions) {
-    this.enforcePermissions = enforcePermissions;
+    userManagerState.enforcePermissions = enforcePermissions;
   }
 
   /** Setter for {@link UserManager#isManagedProfile()}. */
   public void setManagedProfile(boolean managedProfile) {
-    this.managedProfile = managedProfile;
+    userManagerState.managedProfile = managedProfile;
   }
 
   /**
@@ -430,46 +437,46 @@ public class ShadowUserManager {
    */
   @Implementation(minSdk = S)
   protected boolean isCloneProfile() {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException("You need MANAGE_USERS permission to: check isCloneProfile");
     }
 
-    if (cloneProfile != null) {
-      return cloneProfile;
+    if (userManagerState.cloneProfile != null) {
+      return userManagerState.cloneProfile;
     }
 
-    UserInfo info = getUserInfo(context.getUserId());
+    UserInfo info = getUserInfo(getContext().getUserId());
     return info != null && info.isCloneProfile();
   }
 
   /** Setter for {@link UserManager#isCloneProfile()}. */
   public void setCloneProfile(boolean cloneProfile) {
-    this.cloneProfile = cloneProfile;
+    userManagerState.cloneProfile = cloneProfile;
   }
 
   @Implementation(minSdk = R)
   protected boolean isProfile() {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException(
           "You need INTERACT_ACROSS_USERS or MANAGE_USERS permission to: check isProfile");
     }
 
-    return getUserInfo(context.getUserId()).isProfile();
+    return getUserInfo(getContext().getUserId()).isProfile();
   }
 
   @Implementation(minSdk = R)
   protected boolean isUserOfType(String userType) {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException("You need MANAGE_USERS permission to: check user type");
     }
 
-    UserInfo info = getUserInfo(context.getUserId());
+    UserInfo info = getUserInfo(getContext().getUserId());
     return info != null && info.userType != null && info.userType.equals(userType);
   }
 
   @Implementation(minSdk = R)
   protected boolean isSameProfileGroup(UserHandle user, UserHandle otherUser) {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException(
           "You need MANAGE_USERS permission to: check if in the same profile group");
     }
@@ -555,8 +562,8 @@ public class ShadowUserManager {
 
   /**
    * {@link #addUser} uses UserHandle for serialNumber. setSerialNumberForUser() allows assigning an
-   * arbitary serialNumber. Some test use serialNumber!=0 as secondary user check, so it's necessary
-   * to "fake" the serialNumber to a non-zero value.
+   * arbitrary serialNumber. Some test use serialNumber!=0 as secondary user check, so it's
+   * necessary to "fake" the serialNumber to a non-zero value.
    */
   public void setSerialNumberForUser(UserHandle userHandle, long serialNumber) {
     userManagerState.userSerialNumbers.put(userHandle.getIdentifier(), serialNumber);
@@ -596,7 +603,7 @@ public class ShadowUserManager {
   @Implementation(minSdk = Q)
   protected String getUserName() {
     if (RuntimeEnvironment.getApiLevel() >= R) {
-      return getUserName(context.getUserId());
+      return getUserName(getContext().getUserId());
     }
 
     return getUserName(UserHandle.myUserId());
@@ -604,16 +611,16 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = R)
   protected void setUserName(String name) {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException("You need MANAGE_USERS permission to: rename users");
     }
-    UserInfo user = getUserInfo(context.getUserId());
+    UserInfo user = getUserInfo(getContext().getUserId());
     user.name = name;
   }
 
   @Implementation(minSdk = Q)
   protected Bitmap getUserIcon() {
-    if (enforcePermissions
+    if (userManagerState.enforcePermissions
         && !hasManageUsersPermission()
         && !hasGetAccountsPrivilegedPermission()) {
       throw new SecurityException(
@@ -622,7 +629,7 @@ public class ShadowUserManager {
 
     int userId = UserHandle.myUserId();
     if (RuntimeEnvironment.getApiLevel() >= R) {
-      userId = context.getUserId();
+      userId = getContext().getUserId();
     }
 
     return userManagerState.userIcon.get(userId);
@@ -630,13 +637,13 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = Q)
   protected void setUserIcon(Bitmap icon) {
-    if (enforcePermissions && !hasManageUsersPermission()) {
+    if (userManagerState.enforcePermissions && !hasManageUsersPermission()) {
       throw new SecurityException("You need MANAGE_USERS permission to: update users");
     }
 
     int userId = UserHandle.myUserId();
     if (RuntimeEnvironment.getApiLevel() >= R) {
-      userId = context.getUserId();
+      userId = getContext().getUserId();
     }
 
     userManagerState.userIcon.put(userId, icon);
@@ -666,43 +673,43 @@ public class ShadowUserManager {
   @HiddenApi
   @Implementation
   protected static int getMaxSupportedUsers() {
-    return maxSupportedUsers;
+    return userManagerState.maxSupportedUsers;
   }
 
   public void setMaxSupportedUsers(int maxSupportedUsers) {
-    ShadowUserManager.maxSupportedUsers = maxSupportedUsers;
+    userManagerState.maxSupportedUsers = maxSupportedUsers;
   }
 
   private boolean hasManageUsersPermission() {
-    return context
+    return getContext()
             .getPackageManager()
-            .checkPermission(permission.MANAGE_USERS, context.getPackageName())
+            .checkPermission(permission.MANAGE_USERS, getContext().getPackageName())
         == PackageManager.PERMISSION_GRANTED;
   }
 
   private boolean hasCreateUsersPermission() {
-    return context
+    return getContext()
             .getPackageManager()
-            .checkPermission(permission.CREATE_USERS, context.getPackageName())
+            .checkPermission(permission.CREATE_USERS, getContext().getPackageName())
         == PackageManager.PERMISSION_GRANTED;
   }
 
   private boolean hasModifyQuietModePermission() {
-    return context
+    return getContext()
             .getPackageManager()
-            .checkPermission(permission.MODIFY_QUIET_MODE, context.getPackageName())
+            .checkPermission(permission.MODIFY_QUIET_MODE, getContext().getPackageName())
         == PackageManager.PERMISSION_GRANTED;
   }
 
   private boolean hasGetAccountsPrivilegedPermission() {
-    return context
+    return getContext()
             .getPackageManager()
-            .checkPermission(permission.GET_ACCOUNTS_PRIVILEGED, context.getPackageName())
+            .checkPermission(permission.GET_ACCOUNTS_PRIVILEGED, getContext().getPackageName())
         == PackageManager.PERMISSION_GRANTED;
   }
 
   private void checkPermissions() {
-    // TODO Ensure permisions
+    // TODO Ensure permissions
     //              throw new SecurityException("You need INTERACT_ACROSS_USERS or MANAGE_USERS
     // permission "
     //                + "to: check " + name);throw new SecurityException();
@@ -738,7 +745,7 @@ public class ShadowUserManager {
    */
   @Implementation(minSdk = M)
   protected boolean isSystemUser() {
-    if (isSystemUser == false) {
+    if (userManagerState.isSystemUser == false) {
       return false;
     } else {
       return reflector(UserManagerReflector.class, realObject).isSystemUser();
@@ -754,7 +761,7 @@ public class ShadowUserManager {
    */
   @Deprecated
   public void setIsSystemUser(boolean isSystemUser) {
-    this.isSystemUser = isSystemUser;
+    userManagerState.isSystemUser = isSystemUser;
   }
 
   /**
@@ -951,7 +958,9 @@ public class ShadowUserManager {
    */
   @Implementation(minSdk = Q)
   protected boolean requestQuietModeEnabled(boolean enableQuietMode, UserHandle userHandle) {
-    if (enforcePermissions && !hasManageUsersPermission() && !hasModifyQuietModePermission()) {
+    if (userManagerState.enforcePermissions
+        && !hasManageUsersPermission()
+        && !hasModifyQuietModePermission()) {
       throw new SecurityException("Requires MANAGE_USERS or MODIFY_QUIET_MODE permission");
     }
     Preconditions.checkArgument(isManagedProfileWithoutPermission(userHandle));
@@ -986,7 +995,7 @@ public class ShadowUserManager {
     intent.putExtra(Intent.EXTRA_USER, profileHandle);
     intent.setFlags(Intent.FLAG_RECEIVER_FOREGROUND | Intent.FLAG_RECEIVER_REGISTERED_ONLY);
     // Send the broadcast to the context-registered receivers.
-    context.sendBroadcast(intent);
+    getContext().sendBroadcast(intent);
   }
 
   /**
@@ -1037,39 +1046,39 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = Build.VERSION_CODES.N)
   protected String getSeedAccountName() {
-    return seedAccountName;
+    return userManagerState.seedAccountName;
   }
 
   /** Setter for {@link UserManager#getSeedAccountName()} */
   public void setSeedAccountName(String seedAccountName) {
-    this.seedAccountName = seedAccountName;
+    userManagerState.seedAccountName = seedAccountName;
   }
 
   @Implementation(minSdk = Build.VERSION_CODES.N)
   protected String getSeedAccountType() {
-    return seedAccountType;
+    return userManagerState.seedAccountType;
   }
 
   /** Setter for {@link UserManager#getSeedAccountType()} */
   public void setSeedAccountType(String seedAccountType) {
-    this.seedAccountType = seedAccountType;
+    userManagerState.seedAccountType = seedAccountType;
   }
 
   @Implementation(minSdk = Build.VERSION_CODES.N)
   protected PersistableBundle getSeedAccountOptions() {
-    return seedAccountOptions;
+    return userManagerState.seedAccountOptions;
   }
 
   /** Setter for {@link UserManager#getSeedAccountOptions()} */
   public void setSeedAccountOptions(PersistableBundle seedAccountOptions) {
-    this.seedAccountOptions = seedAccountOptions;
+    userManagerState.seedAccountOptions = seedAccountOptions;
   }
 
   @Implementation(minSdk = Build.VERSION_CODES.N)
   protected void clearSeedAccountData() {
-    seedAccountName = null;
-    seedAccountType = null;
-    seedAccountOptions = null;
+    userManagerState.seedAccountName = null;
+    userManagerState.seedAccountType = null;
+    userManagerState.seedAccountOptions = null;
   }
 
   @Implementation
@@ -1109,7 +1118,7 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = N)
   protected static boolean supportsMultipleUsers() {
-    return isMultiUserSupported;
+    return userManagerState.isMultiUserSupported;
   }
 
   /**
@@ -1117,7 +1126,7 @@ public class ShadowUserManager {
    * UserManager#supportsMultipleUser}.
    */
   public void setSupportsMultipleUsers(boolean isMultiUserSupported) {
-    ShadowUserManager.isMultiUserSupported = isMultiUserSupported;
+    userManagerState.isMultiUserSupported = isMultiUserSupported;
   }
 
   /**
@@ -1132,7 +1141,7 @@ public class ShadowUserManager {
 
     ShadowProcess.setUid(userManagerState.userPidMap.get(userId));
 
-    Application application = (Application) context.getApplicationContext();
+    Application application = (Application) getContext().getApplicationContext();
     ShadowContextImpl shadowContext = Shadow.extract(application.getBaseContext());
     shadowContext.setUserId(userId);
 
@@ -1186,12 +1195,12 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = Q)
   protected int getUserSwitchability() {
-    return userSwitchability;
+    return userManagerState.userSwitchability;
   }
 
   /** Sets the user switchability for all users. */
   public void setUserSwitchability(int switchability) {
-    this.userSwitchability = switchability;
+    userManagerState.userSwitchability = switchability;
   }
 
   @Implementation(minSdk = R)
@@ -1223,12 +1232,12 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = S)
   protected static boolean isHeadlessSystemUserMode() {
-    return isHeadlessSystemUserMode;
+    return userManagerState.isHeadlessSystemUserMode;
   }
 
   /** Updates headless system user mode. */
   public static void setHeadlessSystemUserMode(boolean isEnabled) {
-    ShadowUserManager.isHeadlessSystemUserMode = isEnabled;
+    userManagerState.isHeadlessSystemUserMode = isEnabled;
   }
 
   @Implementation(minSdk = TIRAMISU)
@@ -1244,9 +1253,7 @@ public class ShadowUserManager {
 
   @Resetter
   public static void reset() {
-    maxSupportedUsers = DEFAULT_MAX_SUPPORTED_USERS;
-    isMultiUserSupported = false;
-    isHeadlessSystemUserMode = false;
+    userManagerState = new UserManagerState();
   }
 
   @ForType(UserManager.class)
@@ -1264,27 +1271,27 @@ public class ShadowUserManager {
 
   @Implementation(minSdk = TIRAMISU)
   protected boolean someUserHasAccount(String accountName, String accountType) {
-    return userAccounts.contains(new Account(accountName, accountType));
+    return userManagerState.userAccounts.contains(new Account(accountName, accountType));
   }
 
   /** Setter for {@link UserManager#someUserHasAccount(String, String)}. */
   public void setSomeUserHasAccount(String accountName, String accountType) {
-    userAccounts.add(new Account(accountName, accountType));
+    userManagerState.userAccounts.add(new Account(accountName, accountType));
   }
 
   /** Removes user account set via {@link #setSomeUserHasAccount(String, String)}. */
   public void removeSomeUserHasAccount(String accountName, String accountType) {
-    userAccounts.remove(new Account(accountName, accountType));
+    userManagerState.userAccounts.remove(new Account(accountName, accountType));
   }
 
   /** Sets whether or not the current user is the foreground user. */
   public void setUserForeground(boolean foreground) {
-    isForegroundUser = foreground;
+    userManagerState.isForegroundUser = foreground;
   }
 
   @Implementation(minSdk = S)
   protected boolean isUserForeground() {
-    return isForegroundUser;
+    return userManagerState.isForegroundUser;
   }
 
   @Implementation(minSdk = O)

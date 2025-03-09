@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import android.app.Activity;
 import android.content.Context;
 import android.hardware.location.ContextHubClient;
 import android.hardware.location.ContextHubClientCallback;
@@ -25,6 +26,7 @@ import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.robolectric.Robolectric;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.shadow.api.Shadow;
@@ -166,6 +168,38 @@ public class ShadowContextHubManagerTest {
   }
 
   @Test
+  @Config(minSdk = 30)
+  public void contextHubManager_instance_retrievesSameContextHubInfo() {
+    String originalProperty = System.getProperty("robolectric.createActivityContexts", "");
+    System.setProperty("robolectric.createActivityContexts", "true");
+    Activity activity = null;
+
+    try {
+      ContextHubManager applicationContextHubManager =
+          context.getSystemService(ContextHubManager.class);
+
+      activity = Robolectric.setupActivity(Activity.class);
+      ContextHubManager activityContextHubManager =
+          activity.getSystemService(ContextHubManager.class);
+
+      assertThat(applicationContextHubManager).isNotSameInstanceAs(activityContextHubManager);
+
+      List<ContextHubInfo> applicationContextHubs = applicationContextHubManager.getContextHubs();
+      List<ContextHubInfo> activityContextHubs = activityContextHubManager.getContextHubs();
+
+      assertThat(applicationContextHubs).isNotEmpty();
+      assertThat(activityContextHubs).isNotEmpty();
+
+      assertThat(activityContextHubs).isEqualTo(applicationContextHubs);
+    } finally {
+      if (activity != null) {
+        activity.finish();
+      }
+      System.setProperty("robolectric.createActivityContexts", originalProperty);
+    }
+  }
+
+  @Test
   @Config(minSdk = Build.VERSION_CODES.P)
   public void broadcastsFromContextHub_notifiesClient() {
     ContextHubManager contextHubManager = context.getSystemService(ContextHubManager.class);
@@ -236,5 +270,26 @@ public class ShadowContextHubManagerTest {
     verify(callback, never()).onNanoAppUnloaded(any(), anyLong());
     verify(callback, never()).onNanoAppEnabled(any(), anyLong());
     verify(callback, never()).onNanoAppDisabled(any(), anyLong());
+  }
+
+  @Test
+  @Config(minSdk = Build.VERSION_CODES.S)
+  public void checkNanoAppLoadedState() {
+    ContextHubManager contextHubManager = context.getSystemService(ContextHubManager.class);
+    ContextHubClientCallback callback = mock(ContextHubClientCallback.class);
+    contextHubManager.createClient(null, callback);
+    List<ContextHubInfo> contextHubInfoList = contextHubManager.getContextHubs();
+
+    ShadowContextHubManager shadowManager = Shadow.extract(contextHubManager);
+    shadowManager.broadcastClientAuthorizationChanged(1, 2);
+
+    long nanoAppId = 5;
+    int nanoAppVersion = 1;
+    shadowManager.addNanoApp(
+        contextHubInfoList.get(0), /* nanoAppUid= */ 0, nanoAppId, nanoAppVersion);
+    assertThat(shadowManager.nanoAppIsLoaded(nanoAppId)).isTrue();
+
+    shadowManager.unloadNanoApp(contextHubInfoList.get(0), nanoAppId);
+    assertThat(shadowManager.nanoAppIsLoaded(nanoAppId)).isFalse();
   }
 }

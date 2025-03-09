@@ -23,7 +23,6 @@ import org.robolectric.versioning.AndroidVersions.U;
 @Implements(
     minSdk = O,
     value = Paint.class,
-    looseSignatures = true,
     shadowPicker = Picker.class,
     isInAndroidSdk = false,
     callNativeMethodsByDefault = true)
@@ -523,9 +522,9 @@ public class ShadowNativePaint {
     PaintNatives.nSetTypeface(paintPtr, typeface);
   }
 
-  @Implementation(minSdk = O, maxSdk = O_MR1)
-  protected static Object nSetTypeface(Object paintPtr, Object typeface) {
-    PaintNatives.nSetTypeface((long) paintPtr, (long) typeface);
+  @Implementation(minSdk = O, maxSdk = O_MR1, methodName = "nSetTypeface")
+  protected static long nSetTypefacePrePie(long paintPtr, long typeface) {
+    PaintNatives.nSetTypeface(paintPtr, typeface);
     return paintPtr;
   }
 

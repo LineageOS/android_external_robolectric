@@ -77,7 +77,7 @@ java_genrule {
     name: "robolectric_framework_res",
     host_supported: true,
     tools: ["zip2zip"],
-    srcs: [":framework-res"],
+    device_common_srcs: [":framework-res"],
     out: ["robolectric_framework_res.jar"],
     cmd: "$(location zip2zip) " +
         "-i $(location :framework-res) " +
@@ -208,6 +208,8 @@ java_library {
         "//frameworks/opt/car/setupwizard/library/main/tests/robotests:__pkg__",
         "//packages/apps/Car/Notification/tests/robotests:__pkg__",
         "//packages/apps/TvSettings/Settings/tests/robotests:__pkg__",
+        "//packages/apps/Car/Settings/tests/deviceless:__subpackages__",
+        "//packages/apps/Car/Settings/tests/multivalent:__subpackages__",
         "//packages/apps/Car/Settings/tests/robotests:__pkg__",
         "//packages/apps/Car/SystemUI:__pkg__",
         "//packages/apps/Settings/tests/robotests:__pkg__",
@@ -269,6 +271,8 @@ java_host_for_device {
         "//packages/apps/Car/Notification/tests/robotests:__pkg__",
         "//packages/apps/Car/Launcher/libs/appgrid/lib/robotests:__pkg__",
         "//packages/apps/Car/Cluster/DirectRenderingCluster/tests/robotests:__pkg__",
+        "//packages/apps/Car/Settings/tests/deviceless:__subpackages__",
+        "//packages/apps/Car/Settings/tests/multivalent:__subpackages__",
         "//packages/apps/Car/Settings/tests/robotests:__pkg__",
         "//packages/apps/Car/SystemUI:__pkg__",
         "//packages/apps/EmergencyInfo/tests/robolectric:__pkg__",
